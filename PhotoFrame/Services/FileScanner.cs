@@ -1,6 +1,5 @@
-// Services/FileScanner.cs
-// Рекурсивно собирает список фотографий из выбранных директорий/томов.
-// Обрабатывает ошибки доступа без прерывания сканирования.
+// Services/FileScanner.cs — v3.2
+// Рекурсивный поиск изображений. Возвращает ScanResult с подробной статистикой.
 
 using System;
 using System.Collections.Generic;
@@ -11,104 +10,115 @@ using PhotoFrame.Models;
 
 namespace PhotoFrame.Services
 {
+    /// <summary>Результат сканирования с раздельной статистикой.</summary>
+    public class ScanResult
+    {
+        /// <summary>Найденные фотографии (индексированные).</summary>
+        public List<PhotoInfo> Photos { get; init; } = new();
+        /// <summary>Всего файлов проверено (все типы).</summary>
+        public int TotalFilesScanned { get; init; }
+        /// <summary>Папок просмотрено.</summary>
+        public int DirectoriesScanned { get; init; }
+    }
+
     public static class FileScanner
     {
-        // Поддерживаемые расширения изображений
-        private static readonly HashSet<string> SupportedExtensions = new HashSet<string>(
-            StringComparer.OrdinalIgnoreCase)
-        {
-            ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tiff", ".tif", ".webp"
-        };
+        private static readonly HashSet<string> SupportedExtensions =
+            new(StringComparer.OrdinalIgnoreCase)
+            { ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tiff", ".tif", ".webp" };
 
         /// <summary>
-        /// Асинхронно сканирует все указанные пути и возвращает список PhotoInfo.
-        /// Метаданные EXIF читаются lazily — только при показе фото.
+        /// Асинхронное сканирование. Возвращает ScanResult с фото и статистикой.
         /// </summary>
-        /// <param name="paths">Пути к директориям или логическим дискам (например, "D:\").</param>
-        /// <param name="recursive">Включать ли подпапки.</param>
-        /// <param name="progress">Опциональный callback прогресса (путь текущей папки).</param>
-        public static Task<List<PhotoInfo>> ScanAsync(
+        public static Task<ScanResult> ScanAsync(
             IEnumerable<string> paths,
             bool recursive,
             Action<string>? progress = null)
         {
             return Task.Run(() =>
             {
-                var results = new List<PhotoInfo>();
+                var photos = new List<PhotoInfo>();
+                int totalFiles = 0, dirs = 0;
                 var option = recursive
                     ? SearchOption.AllDirectories
                     : SearchOption.TopDirectoryOnly;
 
                 foreach (var root in paths)
                 {
-                    if (!Directory.Exists(root) && !IsLogicalDrive(root))
-                        continue;
-
-                    // При сканировании тома берём его корень
-                    string scanRoot = IsLogicalDrive(root) ? root : root;
-
-                    ScanDirectory(scanRoot, option, results, progress);
+                    if (!Directory.Exists(root)) continue;
+                    ScanDir(root, option, photos, ref totalFiles, ref dirs, progress);
                 }
 
-                return results;
+                return new ScanResult
+                {
+                    Photos            = photos,
+                    TotalFilesScanned = totalFiles,
+                    DirectoriesScanned = dirs
+                };
             });
         }
 
-        /// <summary>
-        /// Возвращает список всех логических дисков в системе,
-        /// доступных для чтения.
-        /// </summary>
+        /// <summary>Список всех готовых логических дисков.</summary>
         public static List<DriveInfo> GetAvailableDrives()
+            => DriveInfo.GetDrives().Where(d => d.IsReady).ToList();
+
+        /// <summary>Список съёмных носителей (USB/SD) с фотографиями.</summary>
+        public static async Task<List<DriveInfo>> GetRemovableWithPhotosAsync()
         {
-            return DriveInfo.GetDrives()
-                .Where(d => d.IsReady)
+            var removable = DriveInfo.GetDrives()
+                .Where(d => d.IsReady && d.DriveType == DriveType.Removable)
                 .ToList();
+
+            var result = new List<DriveInfo>();
+            foreach (var d in removable)
+            {
+                bool hasPhotos = await Task.Run(() =>
+                {
+                    try
+                    {
+                        return Directory.EnumerateFiles(
+                            d.RootDirectory.FullName, "*.*",
+                            SearchOption.AllDirectories)
+                            .Any(f => SupportedExtensions.Contains(
+                                Path.GetExtension(f)));
+                    }
+                    catch { return false; }
+                });
+                if (hasPhotos) result.Add(d);
+            }
+            return result;
         }
 
         // ─── Private ──────────────────────────────────────────────────────────────
 
-        private static void ScanDirectory(
-            string dirPath,
-            SearchOption option,
-            List<PhotoInfo> results,
+        private static void ScanDir(string dir, SearchOption option,
+            List<PhotoInfo> photos, ref int totalFiles, ref int dirs,
             Action<string>? progress)
         {
             try
             {
-                progress?.Invoke(dirPath);
+                progress?.Invoke(dir);
+                dirs++;
 
-                // Сначала файлы в текущей папке
-                foreach (var file in Directory.EnumerateFiles(dirPath))
+                foreach (var file in Directory.EnumerateFiles(dir))
                 {
+                    totalFiles++;
                     if (SupportedExtensions.Contains(Path.GetExtension(file)))
-                    {
-                        results.Add(new PhotoInfo
+                        photos.Add(new PhotoInfo
                         {
                             FilePath  = file,
-                            Directory = Path.GetDirectoryName(file) ?? dirPath
+                            Directory = Path.GetDirectoryName(file) ?? dir
                         });
-                    }
                 }
 
-                // Затем рекурсивно подпапки (по одной, чтобы перехватывать ошибки доступа)
                 if (option == SearchOption.AllDirectories)
-                {
-                    foreach (var sub in Directory.EnumerateDirectories(dirPath))
-                    {
-                        try { ScanDirectory(sub, option, results, progress); }
-                        catch (UnauthorizedAccessException) { /* пропускаем недоступные папки */ }
-                        catch (IOException) { /* пропускаем папки с ошибками ввода-вывода */ }
-                    }
-                }
+                    foreach (var sub in Directory.EnumerateDirectories(dir))
+                        try { ScanDir(sub, option, photos, ref totalFiles, ref dirs, progress); }
+                        catch (UnauthorizedAccessException) { }
+                        catch (IOException) { }
             }
-            catch (UnauthorizedAccessException) { /* нет доступа к корневой папке — пропуск */ }
-            catch (IOException) { /* ошибка чтения — пропуск */ }
-        }
-
-        private static bool IsLogicalDrive(string path)
-        {
-            return path.Length <= 3 && path.EndsWith("\\") ||
-                   path.Length == 2 && path[1] == ':';
+            catch (UnauthorizedAccessException) { }
+            catch (IOException) { }
         }
     }
 }

@@ -1,4 +1,4 @@
-<!-- <Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
@@ -9,50 +9,27 @@
     <LangVersion>10</LangVersion>
     <AssemblyName>PhotoFrame</AssemblyName>
     <RootNamespace>PhotoFrame</RootNamespace>
-    <Version>0.3.1</Version>
-    <Product>PhotoFrame — Фоторамка</Product>
-    <ApplicationManifest>app.manifest</ApplicationManifest>
-    <PlatformTarget>AnyCPU</PlatformTarget>
-    <Prefer32Bit>false</Prefer32Bit>
-    <ApplicationIcon>Resources\Icons\Media001.ico</ApplicationIcon>
-    <Platforms>AnyCPU;x86</Platforms>
-    -->
-    <!-- NOTE: No SupportedOSPlatformVersion (conflicts with SDK), no explicit Page items (SDK auto-includes) -->
-  <!--
-  </PropertyGroup>
-  <ItemGroup>
-    <Resource Include="Resources\Icons\*.png" />
-    <Resource Include="Resources\Icons\*.ico" />
-  </ItemGroup>
-</Project>
--->
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <OutputType>WinExe</OutputType>
-    <!-- 1. Указываем SDK Windows 10 (билд 19041 — база для 2004+) -->
-    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
-    
-    <!-- 2. Указываем МИНИМАЛЬНУЮ версию для запуска -->
-    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
 
-    <UseWPF>true</UseWPF>
-    <UseWindowsForms>true</UseWindowsForms>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>disable</ImplicitUsings>
-    <LangVersion>10</LangVersion>
-    <AssemblyName>PhotoFrame</AssemblyName>
-    <RootNamespace>PhotoFrame</RootNamespace>
-    <Version>0.3.1</Version>
+    <!-- Единственное место для версии. Читается через Assembly.GetExecutingAssembly() -->
+    <Version>1.0.8.5</Version>
+    <AssemblyVersion>1.0.8.5</AssemblyVersion>
+    <FileVersion>1.0.8.5</FileVersion>
+
     <Product>PhotoFrame — Фоторамка</Product>
+    <Company>ArtemITuser</Company>
+    <Copyright>© 2025 @ArtemITuser Ochkin Artyom</Copyright>
+    <Description>Цифровая фоторамка с анимированными переходами для Windows</Description>
+
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    
-    <!-- 3. Нативная поддержка всех архитектур (AnyCPU + Prefer32Bit=false) -->
     <PlatformTarget>AnyCPU</PlatformTarget>
     <Prefer32Bit>false</Prefer32Bit>
-    
     <ApplicationIcon>Resources\Icons\Media001.ico</ApplicationIcon>
-    <Platforms>AnyCPU;x86</Platforms>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- System.Management для WMI DeviceChangeEvent (определение съёмных носителей) -->
+    <PackageReference Include="System.Management" Version="8.0.0" />
+  </ItemGroup>
 
   <ItemGroup>
     <Resource Include="Resources\Icons\*.png" />

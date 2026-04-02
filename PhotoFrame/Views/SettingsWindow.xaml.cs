@@ -1,13 +1,11 @@
-// Views/SettingsWindow.xaml.cs — v3
-// TryFindResource вместо FindResource (не бросает исключение если ресурс не найден).
-// FolderBrowserDialog в try-catch.
-// Нет unsafe resource-lookup в конструкторе.
+// SettingsWindow.xaml.cs — v3.2
+// TryFindResource везде. ClickOnce env vars (.NET 8). Photo count stats.
 
 using System;
-using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
@@ -24,40 +22,32 @@ namespace PhotoFrame.Views
 {
     public partial class SettingsWindow : Window
     {
-        // ─── Публичный результат ──────────────────────────────────────────────────
         public AppSettings Result { get; private set; }
-
-        // ─── Рабочая копия ────────────────────────────────────────────────────────
         private readonly AppSettings _w;
         private readonly ObservableCollection<string> _paths = new();
+        private ScanResult? _lastScan;
 
         private static readonly JsonSerializerOptions _jo = new()
-        {
-            WriteIndented = true,
-            Converters    = { new JsonStringEnumConverter() }
-        };
-
-        // ─────────────────────────────────────────────────────────────────────────
+        { WriteIndented = true, Converters = { new JsonStringEnumConverter() } };
 
         public SettingsWindow(AppSettings current)
         {
-            // Никаких resource-lookups в конструкторе!
             InitializeComponent();
             _w     = Clone(current);
             Result = current;
         }
 
-        // ─── Загрузка (безопасная — try-catch на каждую секцию) ──────────────────
+        // ─── Загрузка ─────────────────────────────────────────────────────────────
 
         private void OnLoaded(object s, RoutedEventArgs e)
         {
-            try { LoadGeneral(); }    catch { /* продолжаем */ }
-            try { LoadSources(); }    catch { /* продолжаем */ }
-            try { LoadOverlays(); }   catch { /* продолжаем */ }
-            try { LoadPlayback(); }   catch { /* продолжаем */ }
-            try { LoadAppearance(); } catch { /* продолжаем */ }
-            try { LoadSystem(); }     catch { /* продолжаем */ }
-            try { LoadPower(); }      catch { /* продолжаем */ }
+            try { LoadGeneral(); }    catch { }
+            try { LoadSources(); }    catch { }
+            try { LoadOverlays(); }   catch { }
+            try { LoadPlayback(); }   catch { }
+            try { LoadAppearance(); } catch { }
+            try { LoadSystem(); }     catch { }
+            try { LoadPower(); }      catch { }
 
             TbStorage.Text = $"Настройки: {SettingsService.StoragePath}";
         }
@@ -75,6 +65,8 @@ namespace PhotoFrame.Views
             foreach (var p in _w.SelectedPaths) _paths.Add(p);
             PathList.ItemsSource = _paths;
             FillDriveButtons();
+            ChkWatchRemovable.IsChecked   = _w.WatchRemovableMedia;
+            ChkSuggestRemovable.IsChecked = _w.SuggestRemovableMedia;
         }
 
         private void LoadOverlays()
@@ -99,6 +91,11 @@ namespace PhotoFrame.Views
             FillCombo<AppTheme>(CmbTheme, new AppThemeToStringConverter());
             SelectTag(CmbTheme, _w.Theme);
             ChkMica.IsChecked = _w.EnableMicaEffect;
+            // Показываем текущий активный эффект прозрачности
+            // (передаётся через AppSettings не хранится — берём из MainWindow если доступно)
+            TbEffectStatus.Text = _w.EnableMicaEffect
+                ? "Эффект прозрачности включён. Win11 = Mica, Win10 = Acrylic blur."
+                : "Эффект прозрачности выключен.";
         }
 
         private void LoadSystem()
@@ -118,18 +115,31 @@ namespace PhotoFrame.Views
             SldSleep.Value       = _w.SleepAfterMinutes;
         }
 
-        // ─── Навигация по разделам ────────────────────────────────────────────────
+        // ─── О программе ─────────────────────────────────────────────────────────
+
+        private void LoadAbout()
+        {
+            var ver = Assembly.GetExecutingAssembly().GetName().Version;
+            if (TbAboutVersion != null && ver != null)
+                TbAboutVersion.Text =
+                    $"PhotoFrame  v{ver.Major}.{ver.Minor}.{ver.Build}.{ver.Revision}";
+
+            // ClickOnce (.NET 8 — через переменные среды)
+            if (TbClickOnceInfo != null)
+                TbClickOnceInfo.Text = SystemIntegration.GetClickOnceInfo();
+        }
+
+        // ─── Навигация ────────────────────────────────────────────────────────────
 
         private void OnNavChanged(object s, SelectionChangedEventArgs e)
         {
             if (NavList?.SelectedItem is not ListBoxItem item) return;
 
-            // Скрываем все панели
             foreach (StackPanel p in new[] { PGeneral, PSources, POverlays,
-                                              PPlayback, PAppearance, PSystem, PPower })
+                                              PPlayback, PAppearance, PSystem, PPower, PAbout })
                 if (p != null) p.Visibility = Visibility.Collapsed;
 
-            string tag = item.Tag as string ?? "";
+            var tag = item.Tag as string ?? "";
             var target = tag switch
             {
                 "General"    => PGeneral,
@@ -139,46 +149,41 @@ namespace PhotoFrame.Views
                 "Appearance" => PAppearance,
                 "System"     => PSystem,
                 "Power"      => PPower,
+                "About"      => PAbout,
                 _            => PGeneral
             };
-
             if (target != null) target.Visibility = Visibility.Visible;
 
-            // Загружаем превью при переходе в Sources
             if (tag == "Sources") _ = LoadPreviewAsync();
+            if (tag == "About")   LoadAbout();
         }
 
-        // ─── Управление путями ────────────────────────────────────────────────────
+        // ─── Источники ────────────────────────────────────────────────────────────
 
         private void FillDriveButtons()
         {
             if (DriveBtns == null) return;
             DriveBtns.Children.Clear();
-
             foreach (var d in FileScanner.GetAvailableDrives())
             {
                 try
                 {
-                    double gb    = d.TotalSize / (1024.0 * 1024 * 1024);
-                    string label = $"{d.Name} ({gb:F0} ГБ)";
-                    string root  = d.RootDirectory.FullName;
-
+                    double gb   = d.TotalSize / (1024.0 * 1024 * 1024);
+                    string root = d.RootDirectory.FullName;
                     var btn = new Button
                     {
-                        Content      = label,
-                        Margin       = new Thickness(0, 0, 6, 6),
-                        Padding      = new Thickness(12, 5, 12, 5),
-                        Height       = 30,
-                        FontSize     = 12,
-                        FontFamily   = new System.Windows.Media.FontFamily("Segoe UI"),
-                        Cursor       = System.Windows.Input.Cursors.Hand,
-                        // Используем TryFindResource — не бросает исключение
-                        Style = TryFindResource("SecondaryButton") as Style
+                        Content    = $"{d.Name} ({gb:F0} ГБ)",
+                        Margin     = new Thickness(0, 0, 6, 6),
+                        Padding    = new Thickness(12, 5, 12, 5),
+                        Height     = 30, FontSize = 12,
+                        FontFamily = new FontFamily("Segoe UI"),
+                        Cursor     = System.Windows.Input.Cursors.Hand,
+                        Style      = TryFindResource("SecondaryButton") as Style
                     };
                     btn.Click += (_, __) => { AddPath(root); _ = LoadPreviewAsync(); };
                     DriveBtns.Children.Add(btn);
                 }
-                catch { /* пропускаем диск с ошибкой */ }
+                catch { }
             }
         }
 
@@ -188,21 +193,16 @@ namespace PhotoFrame.Views
             {
                 using var dlg = new System.Windows.Forms.FolderBrowserDialog
                 {
-                    Description            = "Выберите папку с фотографиями",
-                    ShowNewFolderButton    = false,
-                    UseDescriptionForTitle = true
+                    Description = "Выберите папку с фотографиями",
+                    ShowNewFolderButton = false, UseDescriptionForTitle = true
                 };
-
                 if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK)
-                {
-                    AddPath(dlg.SelectedPath);
-                    _ = LoadPreviewAsync();
-                }
+                { AddPath(dlg.SelectedPath); _ = LoadPreviewAsync(); }
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Ошибка при выборе папки:\n{ex.Message}",
-                    "PhotoFrame", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show($"Ошибка: {ex.Message}", "PhotoFrame",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 
@@ -211,104 +211,64 @@ namespace PhotoFrame.Views
             try
             {
                 var drives = FileScanner.GetAvailableDrives();
-                if (drives.Count == 0)
-                {
-                    MessageBox.Show("Нет доступных дисков.",
-                        "PhotoFrame", MessageBoxButton.OK, MessageBoxImage.Information);
-                    return;
-                }
+                if (drives.Count == 0) return;
 
-                // Простой диалог выбора диска без resource-lookup
                 var dlg = new Window
                 {
-                    Title                 = "Выбор диска",
-                    Width                 = 340,
-                    Height                = 165,
-                    ResizeMode            = ResizeMode.NoResize,
+                    Title = "Выбор диска", Width = 340, Height = 165,
+                    ResizeMode = ResizeMode.NoResize,
                     WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                    Owner                 = this,
-                    Background            = new SolidColorBrush(Color.FromRgb(0x25, 0x25, 0x25))
+                    Owner = this,
+                    Background = TryFindResource("DialogBgBrush") as Brush
+                               ?? new SolidColorBrush(Color.FromRgb(0x1E, 0x1E, 0x1E))
                 };
 
-                var cmb = new ComboBox
-                {
-                    Margin    = new Thickness(16, 8, 16, 8),
-                    FontSize  = 13,
-                    FontFamily = new System.Windows.Media.FontFamily("Segoe UI")
-                };
+                var cmb = new ComboBox { Margin = new Thickness(16, 8, 16, 8), FontSize = 13,
+                    FontFamily = new FontFamily("Segoe UI") };
                 foreach (var d in drives)
-                    cmb.Items.Add(
-                        $"{d.Name}  [{d.VolumeLabel}]  " +
-                        $"({d.TotalSize / (1024 * 1024 * 1024L)} ГБ)");
+                    cmb.Items.Add($"{d.Name}  [{d.VolumeLabel}]  ({d.TotalSize / (1024 * 1024 * 1024L)} ГБ)");
                 cmb.SelectedIndex = 0;
 
-                var btnRow = new StackPanel
-                {
-                    Orientation         = Orientation.Horizontal,
+                var row = new StackPanel { Orientation = Orientation.Horizontal,
                     HorizontalAlignment = HorizontalAlignment.Right,
-                    Margin              = new Thickness(16, 4, 16, 8)
-                };
-                var btnOk = new Button
-                {
-                    Content   = "Добавить",
-                    MinWidth  = 90,
-                    Height    = 30,
-                    Margin    = new Thickness(0, 0, 8, 0),
-                    FontSize  = 13,
-                    FontFamily = new System.Windows.Media.FontFamily("Segoe UI"),
-                    Foreground = Brushes.White,
-                    Background = new SolidColorBrush(Color.FromRgb(0x00, 0x78, 0xD4)),
+                    Margin = new Thickness(16, 4, 16, 8) };
+
+                Brush fgBrush = TryFindResource("TextPrimary") as Brush ?? Brushes.White;
+                var btnOk = new Button { Content = "Добавить", MinWidth = 90, Height = 30,
+                    Margin = new Thickness(0,0,8,0), FontSize = 13,
+                    FontFamily = new FontFamily("Segoe UI"), Foreground = Brushes.White,
+                    Background = new SolidColorBrush(Color.FromRgb(0x00,0x78,0xD4)),
                     BorderThickness = new Thickness(0),
-                    Cursor = System.Windows.Input.Cursors.Hand
-                };
-                var btnCn = new Button
-                {
-                    Content   = "Отмена",
-                    MinWidth  = 80,
-                    Height    = 30,
-                    FontSize  = 13,
-                    FontFamily = new System.Windows.Media.FontFamily("Segoe UI"),
-                    Cursor = System.Windows.Input.Cursors.Hand
-                };
+                    Cursor = System.Windows.Input.Cursors.Hand };
+                var btnCn = new Button { Content = "Отмена", MinWidth = 80, Height = 30,
+                    FontSize = 13, FontFamily = new FontFamily("Segoe UI"),
+                    Cursor = System.Windows.Input.Cursors.Hand };
 
                 btnOk.Click += (_, __) => { dlg.DialogResult = true;  dlg.Close(); };
                 btnCn.Click += (_, __) => { dlg.DialogResult = false; dlg.Close(); };
-                btnRow.Children.Add(btnOk);
-                btnRow.Children.Add(btnCn);
+                row.Children.Add(btnOk); row.Children.Add(btnCn);
 
                 var sp = new StackPanel();
-                sp.Children.Add(new TextBlock
-                {
-                    Text       = "Выберите диск для добавления:",
-                    Margin     = new Thickness(16, 12, 16, 4),
-                    FontSize   = 13,
-                    FontFamily = new System.Windows.Media.FontFamily("Segoe UI"),
-                    Foreground = Brushes.White
-                });
-                sp.Children.Add(cmb);
-                sp.Children.Add(btnRow);
+                sp.Children.Add(new TextBlock { Text = "Выберите диск:",
+                    Margin = new Thickness(16,12,16,4), FontSize = 13,
+                    FontFamily = new FontFamily("Segoe UI"), Foreground = fgBrush });
+                sp.Children.Add(cmb); sp.Children.Add(row);
                 dlg.Content = sp;
 
                 if (dlg.ShowDialog() == true && cmb.SelectedIndex >= 0)
-                {
-                    AddPath(drives[cmb.SelectedIndex].RootDirectory.FullName);
-                    _ = LoadPreviewAsync();
-                }
+                { AddPath(drives[cmb.SelectedIndex].RootDirectory.FullName); _ = LoadPreviewAsync(); }
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Ошибка при выборе диска:\n{ex.Message}",
-                    "PhotoFrame", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show($"Ошибка: {ex.Message}", "PhotoFrame",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 
         private void OnRemovePath(object s, RoutedEventArgs e)
         {
             if (PathList?.SelectedItem is string p)
-            {
-                _paths.Remove(p);
-                _ = LoadPreviewAsync();
-            }
+            { _paths.Remove(p); _ = LoadPreviewAsync(); }
         }
 
         private void AddPath(string path)
@@ -321,10 +281,10 @@ namespace PhotoFrame.Views
                 if (!_paths.Contains(path, StringComparer.OrdinalIgnoreCase))
                     _paths.Add(path);
             }
-            catch { /* некорректный путь */ }
+            catch { }
         }
 
-        // ─── Предпросмотр миниатюр ────────────────────────────────────────────────
+        // ─── Предпросмотр + статистика ────────────────────────────────────────────
 
         private async Task LoadPreviewAsync()
         {
@@ -333,107 +293,66 @@ namespace PhotoFrame.Views
 
             if (_paths.Count == 0)
             {
-                PreviewPanel.Children.Add(new TextBlock
-                {
-                    Text       = "Нет выбранных папок",
-                    FontSize   = 12,
-                    FontFamily = new System.Windows.Media.FontFamily("Segoe UI"),
-                    Foreground = Brushes.Gray,
-                    Margin     = new Thickness(0, 8, 0, 0)
-                });
-                return;
+                ShowPreviewMsg("Нет выбранных папок"); return;
             }
+            ShowPreviewMsg("Сканирование…");
 
-            PreviewPanel.Children.Add(new TextBlock
-            {
-                Text       = "Загрузка превью…",
-                FontSize   = 12,
-                FontFamily = new System.Windows.Media.FontFamily("Segoe UI"),
-                Foreground = Brushes.Gray
-            });
-
-            // Собираем до 12 файлов асинхронно
-            var exts = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-                { ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tiff", ".tif", ".webp" };
-
-            var pathsCopy = _paths.ToList(); // копия для фонового потока
-            var files = await Task.Run(() =>
-            {
-                var result = new List<string>();
-                foreach (var root in pathsCopy)
-                {
-                    try
-                    {
-                        foreach (var f in Directory.EnumerateFiles(
-                            root, "*.*", SearchOption.AllDirectories))
-                        {
-                            if (exts.Contains(Path.GetExtension(f)))
-                            {
-                                result.Add(f);
-                                if (result.Count >= 12) return result;
-                            }
-                        }
-                    }
-                    catch { /* нет доступа — пропускаем */ }
-                }
-                return result;
-            });
+            var pathsCopy = _paths.ToList();
+            _lastScan = await FileScanner.ScanAsync(pathsCopy, _w.IncludeSubdirectories);
 
             PreviewPanel.Children.Clear();
 
-            if (files.Count == 0)
-            {
-                PreviewPanel.Children.Add(new TextBlock
-                {
-                    Text       = "Фотографии не найдены в выбранных папках",
-                    FontSize   = 12,
-                    FontFamily = new System.Windows.Media.FontFamily("Segoe UI"),
-                    Foreground = Brushes.Gray,
-                    Margin     = new Thickness(0, 8, 0, 0)
-                });
-                return;
-            }
+            // Обновляем статистику
+            if (TbIndexStats != null)
+                TbIndexStats.Text =
+                    $"Проиндексировано: {_lastScan.Photos.Count} фото  " +
+                    $"/ {_lastScan.TotalFilesScanned} файлов всего  " +
+                    $"/ {_lastScan.DirectoriesScanned} папок";
+
+            if (_lastScan.Photos.Count == 0)
+            { ShowPreviewMsg("Фотографии не найдены"); return; }
 
             var wrap = new WrapPanel { Orientation = Orientation.Horizontal };
 
-            foreach (var file in files)
+            foreach (var photo in _lastScan.Photos.Take(12))
             {
-                var thumb = await Task.Run(() => LoadThumb(file));
+                var thumb = await Task.Run(() => LoadThumb(photo.FilePath));
                 if (thumb == null) continue;
 
                 var img = new Image { Source = thumb, Stretch = Stretch.UniformToFill };
                 RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.HighQuality);
 
-                // Цвет фона для превью — используем TryFindResource
-                Brush bgBrush = TryFindResource("Surface2Brush") as Brush
-                             ?? new SolidColorBrush(Color.FromRgb(0x2E, 0x2E, 0x2E));
+                Brush bg = TryFindResource("Surface2Brush") as Brush
+                        ?? new SolidColorBrush(Color.FromRgb(0x2A,0x2A,0x2A));
 
                 wrap.Children.Add(new Border
                 {
-                    Width        = 86,
-                    Height       = 86,
-                    Margin       = new Thickness(2),
-                    CornerRadius = new CornerRadius(3),
-                    ClipToBounds = true,
-                    ToolTip      = file,
-                    Background   = bgBrush,
-                    Child        = img
+                    Width = 86, Height = 86, Margin = new Thickness(2),
+                    CornerRadius = new CornerRadius(3), ClipToBounds = true,
+                    ToolTip = photo.FilePath, Background = bg, Child = img
                 });
             }
-
             PreviewPanel.Children.Add(wrap);
 
-            if (files.Count == 12)
-            {
+            if (_lastScan.Photos.Count > 12)
                 PreviewPanel.Children.Add(new TextBlock
                 {
-                    Text       = $"… ещё больше фото в выбранных папках",
-                    FontSize   = 11,
-                    FontFamily = new System.Windows.Media.FontFamily("Segoe UI"),
-                    Foreground = Brushes.Gray,
-                    Margin     = new Thickness(0, 4, 0, 0)
+                    Text = $"… ещё {_lastScan.Photos.Count - 12} фото",
+                    FontSize = 11, FontFamily = new FontFamily("Segoe UI"),
+                    Foreground = TryFindResource("TextSecondary") as Brush ?? Brushes.Gray,
+                    Margin = new Thickness(0, 4, 0, 0)
                 });
-            }
+        }
+
+        private void ShowPreviewMsg(string msg)
+        {
+            PreviewPanel?.Children.Clear();
+            PreviewPanel?.Children.Add(new TextBlock
+            {
+                Text = msg, FontSize = 12, FontFamily = new FontFamily("Segoe UI"),
+                Foreground = TryFindResource("TextSecondary") as Brush ?? Brushes.Gray,
+                Margin = new Thickness(0, 8, 0, 0)
+            });
         }
 
         private static BitmapImage? LoadThumb(string path)
@@ -442,12 +361,11 @@ namespace PhotoFrame.Views
             {
                 var b = new BitmapImage();
                 b.BeginInit();
-                b.UriSource        = new Uri(path, UriKind.Absolute);
+                b.UriSource = new Uri(path, UriKind.Absolute);
                 b.DecodePixelWidth = 86;
-                b.CacheOption      = BitmapCacheOption.OnLoad;
-                b.CreateOptions    = BitmapCreateOptions.IgnoreColorProfile;
-                b.EndInit();
-                b.Freeze();
+                b.CacheOption = BitmapCacheOption.OnLoad;
+                b.CreateOptions = BitmapCreateOptions.IgnoreColorProfile;
+                b.EndInit(); b.Freeze();
                 return b;
             }
             catch { return null; }
@@ -459,40 +377,18 @@ namespace PhotoFrame.Views
         {
             if (TbIntervalVal == null) return;
             int v = (int)Math.Round(e.NewValue);
-            TbIntervalVal.Text = v >= 60 ? $"{v / 60}м {v % 60:D2}с" : $"{v} с";
+            TbIntervalVal.Text = v >= 60 ? $"{v/60}м {v%60:D2}с" : $"{v} с";
         }
-
         private void OnFontChanged(object s, RoutedPropertyChangedEventArgs<double> e)
-        {
-            if (TbFontVal != null)
-                TbFontVal.Text = $"{Math.Round(e.NewValue, 1)} pt";
-        }
-
+        { if (TbFontVal != null) TbFontVal.Text = $"{Math.Round(e.NewValue,1)} pt"; }
         private void OnDurChanged(object s, RoutedPropertyChangedEventArgs<double> e)
-        {
-            if (TbDurVal != null)
-                TbDurVal.Text = $"{e.NewValue:F2} с";
-        }
-
+        { if (TbDurVal != null) TbDurVal.Text = $"{e.NewValue:F2} с"; }
         private void OnScrDelayChanged(object s, RoutedPropertyChangedEventArgs<double> e)
-        {
-            if (TbScrDelayVal != null)
-                TbScrDelayVal.Text = $"{(int)e.NewValue} мин";
-        }
-
+        { if (TbScrDelayVal != null) TbScrDelayVal.Text = $"{(int)e.NewValue} мин"; }
         private void OnMonOffChanged(object s, RoutedPropertyChangedEventArgs<double> e)
-        {
-            if (TbMonOffVal == null) return;
-            int v = (int)e.NewValue;
-            TbMonOffVal.Text = v == 0 ? "Не управлять" : $"{v} мин";
-        }
-
+        { if (TbMonOffVal != null) TbMonOffVal.Text = (int)e.NewValue == 0 ? "Не управлять" : $"{(int)e.NewValue} мин"; }
         private void OnSleepChanged(object s, RoutedPropertyChangedEventArgs<double> e)
-        {
-            if (TbSleepVal == null) return;
-            int v = (int)e.NewValue;
-            TbSleepVal.Text = v == 0 ? "Не управлять" : $"{v} мин";
-        }
+        { if (TbSleepVal != null) TbSleepVal.Text = (int)e.NewValue == 0 ? "Не управлять" : $"{(int)e.NewValue} мин"; }
 
         // ─── Скринсейвер ──────────────────────────────────────────────────────────
 
@@ -507,11 +403,11 @@ namespace PhotoFrame.Views
                     {
                         MessageBox.Show(
                             $"Не удалось зарегистрировать скринсейвер:\n{err}\n\n" +
-                            "Попробуйте запустить приложение от имени администратора.",
+                            "Диалог UAC должен был появиться — убедитесь что разрешили действие.",
                             "Скринсейвер", MessageBoxButton.OK, MessageBoxImage.Warning);
                         ChkScrReg.IsChecked = false;
                     }
-                    TbScrStatus.Text = ok ? "✔ Зарегистрирован" : "Ошибка регистрации";
+                    TbScrStatus.Text = ok ? "✔ Зарегистрирован" : "Ошибка";
                 }
                 else
                 {
@@ -521,31 +417,44 @@ namespace PhotoFrame.Views
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Ошибка скринсейвера:\n{ex.Message}",
-                    "PhotoFrame", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show($"Ошибка: {ex.Message}", "PhotoFrame",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 
         private void OnApplyPower(object s, RoutedEventArgs e)
         {
+            bool ok = SystemIntegration.SetPowerTimeouts(
+                (int)SldMonOff.Value * 60, (int)SldSleep.Value * 60);
+            MessageBox.Show(ok ? "Применено." : "Не удалось применить.",
+                "Питание", MessageBoxButton.OK,
+                ok ? MessageBoxImage.Information : MessageBoxImage.Warning);
+        }
+
+        // ─── О программе / обновления ─────────────────────────────────────────────
+
+        private async void OnCheckUpdates(object s, RoutedEventArgs e)
+        {
+            if (TbUpdateStatus == null) return;
+            TbUpdateStatus.Text = "Проверяем…";
             try
             {
-                bool ok = SystemIntegration.SetPowerTimeouts(
-                    (int)SldMonOff.Value * 60,
-                    (int)SldSleep.Value  * 60);
+                var cur = Assembly.GetExecutingAssembly().GetName().Version ?? new Version(1,0,0,0);
+                var (tag, isNewer) = await SystemIntegration.CheckGitHubUpdateAsync(cur);
 
-                MessageBox.Show(
-                    ok ? "Параметры питания применены."
-                       : "Не удалось применить. Попробуйте запустить от администратора.",
-                    "Электропитание", MessageBoxButton.OK,
-                    ok ? MessageBoxImage.Information : MessageBoxImage.Warning);
+                if (tag == null)
+                { TbUpdateStatus.Text = "Не удалось связаться с GitHub. Проверьте интернет."; return; }
+
+                string curStr = $"v{cur.Major}.{cur.Minor}.{cur.Build}.{cur.Revision}";
+                TbUpdateStatus.Text = isNewer
+                    ? $"⬆ Доступна версия: {tag}  (у вас: {curStr})\nОткройте страницу релизов для загрузки."
+                    : $"✔ Актуальная версия установлена ({curStr}).";
             }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Ошибка питания:\n{ex.Message}",
-                    "PhotoFrame", MessageBoxButton.OK, MessageBoxImage.Warning);
-            }
+            catch (Exception ex) { TbUpdateStatus.Text = $"Ошибка: {ex.Message}"; }
         }
+
+        private void OnOpenReleases(object s, RoutedEventArgs e) => SystemIntegration.OpenGitHubReleases();
+        private void OnOpenGitHub(object s, RoutedEventArgs e)   => SystemIntegration.OpenGitHub();
 
         // ─── OK / Отмена ──────────────────────────────────────────────────────────
 
@@ -554,28 +463,21 @@ namespace PhotoFrame.Views
             try
             {
                 Collect();
-
-                // Автозагрузка — немедленно
                 SystemIntegration.SetAutostart(ChkAutorun?.IsChecked == true);
-
-                // Задержка скринсейвера
                 if (_w.RegisterAsScreensaver)
                     SystemIntegration.SetScreensaverDelay(_w.ScreensaverDelayMinutes);
-
-                Result       = _w;
-                DialogResult = true;
+                Result = _w; DialogResult = true;
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Ошибка при сохранении:\n{ex.Message}",
-                    "PhotoFrame", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"Ошибка сохранения:\n{ex.Message}", "PhotoFrame",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
-        private void OnCancel(object s, RoutedEventArgs e)
-            => DialogResult = false;
+        private void OnCancel(object s, RoutedEventArgs e) => DialogResult = false;
 
-        // ─── Сбор значений из контролов ──────────────────────────────────────────
+        // ─── Сбор значений ────────────────────────────────────────────────────────
 
         private void Collect()
         {
@@ -585,24 +487,23 @@ namespace PhotoFrame.Views
             _w.IncludeSubdirectories    = ChkRecursive?.IsChecked == true;
 
             _w.SelectedPaths = _paths.ToList();
+            _w.WatchRemovableMedia   = ChkWatchRemovable?.IsChecked   == true;
+            _w.SuggestRemovableMedia = ChkSuggestRemovable?.IsChecked == true;
 
             _w.ShowDirectoryOverlay = ChkDir?.IsChecked  == true;
             _w.ShowDateOverlay      = ChkDate?.IsChecked == true;
             _w.ShowLocationOverlay  = ChkLoc?.IsChecked  == true;
             _w.OverlayFontSize      = Math.Round(SldFont?.Value ?? 15, 1);
 
-            if (SelectedTag<PlayMode>(CmbPlayMode, out var pm))
-                _w.PlayMode = pm;
-            if (SelectedTag<TransitionType>(CmbTransition, out var tt))
-                _w.TransitionType = tt;
+            if (SelectedTag<PlayMode>(CmbPlayMode, out var pm))       _w.PlayMode = pm;
+            if (SelectedTag<TransitionType>(CmbTransition, out var tt)) _w.TransitionType = tt;
             _w.TransitionDurationSeconds = Math.Round(SldDuration?.Value ?? 0.75, 2);
 
-            if (SelectedTag<AppTheme>(CmbTheme, out var th))
-                _w.Theme = th;
+            if (SelectedTag<AppTheme>(CmbTheme, out var th)) _w.Theme = th;
             _w.EnableMicaEffect = ChkMica?.IsChecked == true;
 
-            _w.MinimizeToTray          = ChkMinToTray?.IsChecked == true;
-            _w.RegisterAsScreensaver   = ChkScrReg?.IsChecked    == true;
+            _w.MinimizeToTray        = ChkMinToTray?.IsChecked == true;
+            _w.RegisterAsScreensaver = ChkScrReg?.IsChecked    == true;
             _w.ScreensaverDelayMinutes = (int)(SldScrDelay?.Value ?? 5);
 
             _w.PreventSleep            = ChkNoSleep?.IsChecked == true;
@@ -612,9 +513,8 @@ namespace PhotoFrame.Views
 
         // ─── Вспомогательные ──────────────────────────────────────────────────────
 
-        private static void FillCombo<T>(
-            ComboBox cmb,
-            System.Windows.Data.IValueConverter conv) where T : struct, Enum
+        private static void FillCombo<T>(ComboBox cmb, System.Windows.Data.IValueConverter conv)
+            where T : struct, Enum
         {
             if (cmb == null) return;
             cmb.Items.Clear();
@@ -623,24 +523,22 @@ namespace PhotoFrame.Views
                 {
                     Content = conv.Convert(val, typeof(string), null,
                         System.Globalization.CultureInfo.InvariantCulture) as string ?? val.ToString(),
-                    Tag     = val
+                    Tag = val
                 });
         }
 
-        private static void SelectTag(ComboBox? cmb, object tagValue)
+        private static void SelectTag(ComboBox? cmb, object tag)
         {
             if (cmb == null) return;
-            foreach (ComboBoxItem item in cmb.Items)
-                if (Equals(item.Tag, tagValue)) { cmb.SelectedItem = item; return; }
+            foreach (ComboBoxItem i in cmb.Items)
+                if (Equals(i.Tag, tag)) { cmb.SelectedItem = i; return; }
             if (cmb.Items.Count > 0) cmb.SelectedIndex = 0;
         }
 
         private static bool SelectedTag<T>(ComboBox? cmb, out T val) where T : struct
         {
-            if (cmb?.SelectedItem is ComboBoxItem ci && ci.Tag is T v)
-            { val = v; return true; }
-            val = default;
-            return false;
+            if (cmb?.SelectedItem is ComboBoxItem ci && ci.Tag is T v) { val = v; return true; }
+            val = default; return false;
         }
 
         private static AppSettings Clone(AppSettings src)

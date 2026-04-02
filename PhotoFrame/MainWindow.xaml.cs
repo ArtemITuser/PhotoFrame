@@ -1,18 +1,15 @@
-// MainWindow.xaml.cs — v3 (финальная версия)
-//
-// Ключевые изменения v3:
-//   • Все кнопки тулбара имеют контент прямо в XAML (Segoe MDL2 TextBlock).
-//     Код только меняет .Text у именованных TbPlayIcon, TbThemeIcon, TbFullscreenIcon.
-//     Это полностью устраняет класс ошибок «NullRef при инициализации иконок».
-//   • Settings/EmptyPanel кнопки вызывают OpenSettings() с полным try-catch.
-//   • Тулбар в оконном режиме не прячется.
-//   • App.ThemeChanged → корректное обновление DWM и иконки темы.
+// MainWindow.xaml.cs — v3.2
+// - ScanResult вместо List<PhotoInfo>: indexed photos / total files
+// - Removable media watch (WMI DeviceInsertedEvent)
+// - PlayMode 2 states: ⇄ / ↕ 
+// - Version from Assembly in title bar
 
 using System;
 using System.IO;
+using System.Management; // for WMI removable drive detection
+using System.Reflection;
 using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
@@ -26,27 +23,24 @@ namespace PhotoFrame
 {
     public partial class MainWindow : Window
     {
-        // ─── Состояние ────────────────────────────────────────────────────────────
-        private AppSettings       _cfg      = new();
+        private AppSettings  _cfg       = new();
         private TransitionEngine? _engine;
         private PlaylistManager   _playlist = new();
-        private bool              _playing  = false;
-        private bool              _fullscreen = false;
-        private WindowState       _prevWinState;
+        private ScanResult?  _lastScan;
+        private bool         _playing   = false;
+        private bool         _fullscreen = false;
+        private WindowState  _prevWinState;
+        private string       _effectApplied = "none";
 
-        // ─── Таймеры ──────────────────────────────────────────────────────────────
         private readonly DispatcherTimer _slideTimer = new();
         private readonly DispatcherTimer _hideTimer  = new() { Interval = TimeSpan.FromSeconds(3) };
         private bool _toolbarVisible = true;
 
-        // ─── Тач ──────────────────────────────────────────────────────────────────
         private double _touchStartX;
         private const double SwipePx = 70;
 
-        // ─── Трей ─────────────────────────────────────────────────────────────────
         private System.Windows.Forms.NotifyIcon? _tray;
-
-        // ──────────────────────────────────────────────────────────────────────────
+        private ManagementEventWatcher?           _driveWatcher;
 
         public MainWindow()
         {
@@ -61,45 +55,36 @@ namespace PhotoFrame
         {
             try
             {
-                // 1. Движок переходов — только после InitializeComponent
                 _engine = new TransitionEngine(ImgA, ImgB, RootGrid);
+                _cfg    = SettingsService.Load();
 
-                // 2. Загружаем настройки
-                _cfg = SettingsService.Load();
+                // Версия в заголовке из Assembly
+                var ver = Assembly.GetExecutingAssembly().GetName().Version;
+                TbTitleVersion.Text = ver != null
+                    ? $"PhotoFrame  v{ver.Major}.{ver.Minor}.{ver.Build}.{ver.Revision}"
+                    : "PhotoFrame";
 
-                // 3. Применяем тему к заголовку DWM
                 RefreshDwmTheme();
-
-                // 4. Подписываемся на смену темы
                 App.ThemeChanged += OnThemeChanged;
 
-                // 5. Mica (Windows 11)
                 if (_cfg.EnableMicaEffect)
-                    WindowHelper.TryApplyMica(this);
+                    _effectApplied = WindowHelper.TryApplyMica(this);
 
-                // 6. Электропитание
                 SystemIntegration.PreventSleep(_cfg.PreventSleep);
-
-                // 7. Трей
                 BuildTray();
+                StartRemovableMediaWatcher();
 
-                // 8. В режиме скринсейвера — сразу полный экран
                 if (App.StartMode == AppStartMode.Screensaver)
                 {
                     EnterFullscreen();
                     _hideTimer.Start();
                 }
 
-                // 9. Синхронизируем иконки с начальным состоянием
                 SyncPlayIcon();
                 SyncThemeIcon();
                 SyncPlayModeIcon();
-                // TbFullscreenIcon уже = \uE740 (Enter FullScreen) в XAML — корректно
-
-                // 10. Метка интервала
                 SyncIntervalLabel();
 
-                // 11. Загружаем фото или показываем пустое состояние
                 if (_cfg.SelectedPaths.Count > 0)
                     await ReloadPhotosAsync();
                 else
@@ -107,30 +92,28 @@ namespace PhotoFrame
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Ошибка при запуске:\n{ex.Message}",
+                MessageBox.Show($"Ошибка запуска:\n{ex.Message}",
                     "PhotoFrame", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
-        // ─── ЗАГРУЗКА ФОТОГРАФИЙ ─────────────────────────────────────────────────
+        // ─── ФОТОГРАФИИ ───────────────────────────────────────────────────────────
 
         private async Task ReloadPhotosAsync()
         {
             ScanPanel.Visibility  = Visibility.Visible;
             EmptyPanel.Visibility = Visibility.Collapsed;
 
-            var photos = await FileScanner.ScanAsync(
-                _cfg.SelectedPaths,
-                _cfg.IncludeSubdirectories,
+            _lastScan = await FileScanner.ScanAsync(
+                _cfg.SelectedPaths, _cfg.IncludeSubdirectories,
                 p => Dispatcher.InvokeAsync(() => TbScanPath.Text = p));
 
             ScanPanel.Visibility = Visibility.Collapsed;
 
-            if (photos.Count == 0) { ShowEmpty(); return; }
+            if (_lastScan.Photos.Count == 0) { ShowEmpty(); return; }
 
-            _playlist.SetPhotos(photos, _cfg.PlayMode);
+            _playlist.SetPhotos(_lastScan.Photos, _cfg.PlayMode);
             await ShowCurrentAsync(animate: false);
-
             if (_cfg.AutoStart) StartSlide();
         }
 
@@ -139,20 +122,14 @@ namespace PhotoFrame
             var photo = _playlist.Current;
             if (photo == null) return;
 
-            // EXIF — лениво
             if (!photo.DateTaken.HasValue && photo.Latitude == null)
                 await Task.Run(() => MetadataReader.Populate(photo));
 
-            // Загружаем изображение
             var bmp = await Task.Run(() => LoadBitmap(photo.FilePath));
             if (bmp == null)
             {
-                // Пропускаем битый файл
                 if (_playlist.Count > 1)
-                {
-                    _playlist.Next(_cfg.PlayMode, _cfg.LoopSlideshow);
-                    await ShowCurrentAsync(animate);
-                }
+                { _playlist.Next(_cfg.PlayMode, _cfg.LoopSlideshow); await ShowCurrentAsync(animate); }
                 return;
             }
 
@@ -163,7 +140,12 @@ namespace PhotoFrame
             else
                 _engine?.ShowImmediate(bmp);
 
-            TbCounter.Text = $"{_playlist.CurrentIndex + 1} / {_playlist.Count}";
+            // Счётчик: текущий / проиндексировано (всего файлов)
+            int indexed = _lastScan?.Photos.Count ?? _playlist.Count;
+            int total   = _lastScan?.TotalFilesScanned ?? indexed;
+            TbCounter.Text = total > indexed
+                ? $"{_playlist.CurrentIndex + 1} / {indexed}  [{total} файлов]"
+                : $"{_playlist.CurrentIndex + 1} / {indexed}";
         }
 
         private static BitmapImage? LoadBitmap(string path)
@@ -176,7 +158,7 @@ namespace PhotoFrame
                 b.UriSource        = new Uri(path, UriKind.Absolute);
                 b.CacheOption      = BitmapCacheOption.OnLoad;
                 b.CreateOptions    = BitmapCreateOptions.IgnoreColorProfile;
-                b.DecodePixelWidth = 2560; // ограничиваем для экономии RAM
+                b.DecodePixelWidth = 2560;
                 b.EndInit();
                 b.Freeze();
                 return b;
@@ -184,7 +166,7 @@ namespace PhotoFrame
             catch { return null; }
         }
 
-        // ─── НАВИГАЦИЯ ────────────────────────────────────────────────────────────
+        // ─── NAVGATION ────────────────────────────────────────────────────────────
 
         private async Task AdvanceAsync()
         {
@@ -204,8 +186,7 @@ namespace PhotoFrame
 
         private void StartSlide()
         {
-            _slideTimer.Interval = TimeSpan.FromSeconds(
-                Math.Max(1, _cfg.SlideshowIntervalSeconds));
+            _slideTimer.Interval = TimeSpan.FromSeconds(Math.Max(1, _cfg.SlideshowIntervalSeconds));
             _slideTimer.Start();
             _playing = true;
             SyncPlayIcon();
@@ -223,18 +204,12 @@ namespace PhotoFrame
         private void ShowToolbarNow()
         {
             _hideTimer.Stop();
-            if (_toolbarVisible)
-            {
-                if (_fullscreen) _hideTimer.Start();
-                return;
-            }
-            _toolbarVisible     = true;
-            Toolbar.Visibility  = Visibility.Visible;
-            TitleBar.Visibility = Visibility.Visible;
+            if (_toolbarVisible) { if (_fullscreen) _hideTimer.Start(); return; }
+            _toolbarVisible    = true;
+            Toolbar.Visibility = TitleBar.Visibility = Visibility.Visible;
             var a = new DoubleAnimation(ToolbarSlide.Y, 0,
                 new Duration(TimeSpan.FromMilliseconds(180)));
-            ToolbarSlide.BeginAnimation(
-                System.Windows.Media.TranslateTransform.YProperty, a);
+            ToolbarSlide.BeginAnimation(System.Windows.Media.TranslateTransform.YProperty, a);
             if (_fullscreen) _hideTimer.Start();
         }
 
@@ -243,15 +218,14 @@ namespace PhotoFrame
             _hideTimer.Stop();
             if (!_toolbarVisible || !_fullscreen) return;
             _toolbarVisible = false;
-            var a = new DoubleAnimation(0, 62,
+            var a = new DoubleAnimation(0, 76,
                 new Duration(TimeSpan.FromMilliseconds(280)));
             a.Completed += (_, __) =>
             {
                 Toolbar.Visibility  = Visibility.Collapsed;
                 TitleBar.Visibility = Visibility.Collapsed;
             };
-            ToolbarSlide.BeginAnimation(
-                System.Windows.Media.TranslateTransform.YProperty, a);
+            ToolbarSlide.BeginAnimation(System.Windows.Media.TranslateTransform.YProperty, a);
         }
 
         // ─── ПОЛНЫЙ ЭКРАН ─────────────────────────────────────────────────────────
@@ -263,9 +237,9 @@ namespace PhotoFrame
             WindowStyle   = WindowStyle.None;
             WindowState   = WindowState.Maximized;
             _fullscreen   = true;
-            // \uE741 = BackToWindow (выход из полноэкранного режима)
-            TbFullscreenIcon.Text = "\uE741";
-            BtnFullscreen.ToolTip = "Оконный режим  F / F11";
+            TbFullscreenIcon.Text  = "\uE741";  // BackToWindow
+            TbFullscreenLabel.Text = "Окно";
+            BtnFullscreen.ToolTip  = "Оконный режим  F / F11";
         }
 
         private void ExitFullscreen()
@@ -275,9 +249,9 @@ namespace PhotoFrame
             WindowState   = _prevWinState;
             _fullscreen   = false;
             ShowToolbarNow();
-            // \uE740 = FullScreen (войти в полноэкранный режим)
-            TbFullscreenIcon.Text = "\uE740";
-            BtnFullscreen.ToolTip = "Полный экран  F / F11";
+            TbFullscreenIcon.Text  = "\uE740";  // FullScreen
+            TbFullscreenLabel.Text = "Экран";
+            BtnFullscreen.ToolTip  = "Полный экран  F / F11";
         }
 
         // ─── ТЕМА ─────────────────────────────────────────────────────────────────
@@ -286,46 +260,48 @@ namespace PhotoFrame
         {
             RefreshDwmTheme();
             SyncThemeIcon();
+            // Переприменяем Acrylic с правильным цветом для новой темы
+            if (_cfg.EnableMicaEffect)
+                _effectApplied = WindowHelper.TryApplyMica(this);
         }
 
         private void RefreshDwmTheme()
-        {
-            bool dark = App.CurrentTheme == AppTheme.Dark;
-            WindowHelper.SetTitleBarDarkMode(this, dark);
-        }
+            => WindowHelper.SetTitleBarDarkMode(this, App.CurrentTheme == AppTheme.Dark);
 
-        // ─── СИНХРОНИЗАЦИЯ ИКОНОК ─────────────────────────────────────────────────
-        // Только изменяемые иконки обновляются через код — статичные заданы в XAML.
+        // ─── ИКОНКИ ───────────────────────────────────────────────────────────────
 
         private void SyncPlayIcon()
         {
-            // \uE768 = Play, \uE769 = Pause (Segoe MDL2 Assets)
-            TbPlayIcon.Text        = _playing ? "\uE769" : "\uE768";
-            BtnPlayPause.ToolTip   = _playing ? "Пауза  Пробел" : "Пуск  Пробел";
+            TbPlayIcon.Text  = _playing ? "\uE769" : "\uE768";
+            TbPlayLabel.Text = _playing ? "Пауза"  : "Пуск";
+            BtnPlayPause.ToolTip = _playing ? "Пауза  Пробел" : "Пуск  Пробел";
         }
 
         private void SyncThemeIcon()
         {
-            // \uE708 = тёмная тема (луна+звезда), \uE706 = светлая (солнце)
             bool dark = App.CurrentTheme == AppTheme.Dark;
-            TbThemeIcon.Text      = dark ? "\uE708" : "\uE706";
-            BtnTheme.ToolTip      = dark ? "Переключить на светлую тему" : "Переключить на тёмную тему";
+            TbThemeIcon.Text = dark ? "\uE708" : "\uE706";
+            BtnTheme.ToolTip = dark
+                ? "Переключить на светлую тему"
+                : "Переключить на тёмную тему";
         }
 
+        /// <summary>
+        /// PlayMode в тулбаре: 2 состояния.
+        ///   ⇄ (U+21C4, Shuffle) — стрелки пересекаются
+        ///   ↕ (U+2195, Sequential) — стрелки вверх-вниз (по порядку)
+        /// Segoe MDL2 Assets:
+        ///   \uE8B1 = Shuffle (лучше читается)
+        ///   \uE8AC = Sort/Sequential
+        /// </summary>
         private void SyncPlayModeIcon()
         {
-            // \uE8B1 = Shuffle, \uE8AC = Sort (Sequential), \uEA4F = Repeat1, \uEBE9 = ChevronDown
-            (string glyph, string tip) = _cfg.PlayMode switch
-            {
-                PlayMode.Sequential     => ("\uE8AC", "Порядок: по имени"),
-                PlayMode.Shuffle        => ("\uE8B1", "Порядок: перемешать"),
-                PlayMode.TrueRandom     => ("\uE74D", "Порядок: случайно"),
-                PlayMode.DateAscending  => ("\uE74A", "Порядок: дата ↑"),
-                PlayMode.DateDescending => ("\uE74B", "Порядок: дата ↓"),
-                _                       => ("\uE8B1", "Порядок")
-            };
-            TbPlayModeIcon.Text  = glyph;
-            BtnPlayMode.ToolTip  = tip;
+            bool shuffle = _cfg.PlayMode != PlayMode.Sequential;
+            TbPlayModeIcon.Text  = shuffle ? "\uE8B1" : "\uE8AC";
+            TbPlayModeLabel.Text = shuffle ? "Случайно" : "По порядку";
+            BtnPlayMode.ToolTip  = shuffle
+                ? "Перемешать (клик — по порядку)"
+                : "По порядку (клик — перемешать)";
         }
 
         private void SyncIntervalLabel()
@@ -338,17 +314,17 @@ namespace PhotoFrame
 
         private void UpdateOverlays(PhotoInfo photo)
         {
-            double fs = _cfg.OverlayFontSize;
-
-            ApplyOverlay(OverlayDir,  TbDir,  _cfg.ShowDirectoryOverlay, photo.Directory, fs);
-            ApplyOverlay(OverlayLoc,  TbLoc,  _cfg.ShowLocationOverlay,  photo.LocationString, fs);
-            ApplyOverlay(OverlayDate, TbDate, _cfg.ShowDateOverlay,       photo.DateString, fs);
+            Set(OverlayDir,  TbDir,  _cfg.ShowDirectoryOverlay, photo.Directory,      _cfg.OverlayFontSize);
+            Set(OverlayLoc,  TbLoc,  _cfg.ShowLocationOverlay,  photo.LocationString, _cfg.OverlayFontSize);
+            Set(OverlayDate, TbDate, _cfg.ShowDateOverlay,       photo.DateString,     _cfg.OverlayFontSize);
         }
 
-        private static void ApplyOverlay(Border b, TextBlock tb, bool show, string? text, double fs)
+        private static void Set(
+            System.Windows.Controls.Border b,
+            System.Windows.Controls.TextBlock tb,
+            bool show, string? text, double fs)
         {
-            tb.Text     = text ?? "";
-            tb.FontSize = fs;
+            tb.Text = text ?? ""; tb.FontSize = fs;
             b.Visibility = show && !string.IsNullOrEmpty(text)
                 ? Visibility.Visible : Visibility.Collapsed;
         }
@@ -360,88 +336,126 @@ namespace PhotoFrame
             TbCounter.Text = "";
         }
 
-        // ─── ТРЕЙ ─────────────────────────────────────────────────────────────────
+        // ─── REMOVABLE MEDIA WATCHER ─────────────────────────────────────────────
+
+        private void StartRemovableMediaWatcher()
+        {
+            if (!_cfg.WatchRemovableMedia) return;
+            try
+            {
+                _driveWatcher = new ManagementEventWatcher(
+                    new WqlEventQuery(
+                        "SELECT * FROM Win32_VolumeChangeEvent WHERE EventType = 2"));
+                _driveWatcher.EventArrived += OnDriveInserted;
+                _driveWatcher.Start();
+            }
+            catch { /* WMI недоступен — игнорируем */ }
+        }
+
+        private async void OnDriveInserted(object sender, EventArrivedEventArgs e)
+        {
+            await Dispatcher.InvokeAsync(async () =>
+            {
+                try
+                {
+                    // Ищем съёмные носители с фото
+                    var removable = await FileScanner.GetRemovableWithPhotosAsync();
+                    if (removable.Count == 0) return;
+
+                    string drives = string.Join(", ", removable.ConvertAll(d => d.Name));
+                    if (_cfg.SuggestRemovableMedia)
+                    {
+                        var r = MessageBox.Show(
+                            $"Обнаружены фото на съёмном носителе: {drives}\n" +
+                            "Добавить в список источников?",
+                            "PhotoFrame", MessageBoxButton.YesNo,
+                            MessageBoxImage.Question);
+
+                        if (r == MessageBoxResult.Yes)
+                        {
+                            foreach (var d in removable)
+                                if (!_cfg.SelectedPaths.Contains(d.RootDirectory.FullName))
+                                    _cfg.SelectedPaths.Add(d.RootDirectory.FullName);
+
+                            SettingsService.Save(_cfg);
+                            await ReloadPhotosAsync();
+                        }
+                    }
+                    else if (_cfg.WatchRemovableMedia)
+                    {
+                        // Тихое добавление без вопроса
+                        bool added = false;
+                        foreach (var d in removable)
+                            if (!_cfg.SelectedPaths.Contains(d.RootDirectory.FullName))
+                            { _cfg.SelectedPaths.Add(d.RootDirectory.FullName); added = true; }
+                        if (added) { SettingsService.Save(_cfg); await ReloadPhotosAsync(); }
+                    }
+                }
+                catch { }
+            });
+        }
+
+        // ─── ТРЕЙ ────────────────────────────────────────────────────────────────
 
         private void BuildTray()
         {
             try
             {
-                _tray = new System.Windows.Forms.NotifyIcon
-                {
-                    Text    = "PhotoFrame",
-                    Visible = true
-                };
-
-                // Иконка из ресурсов
+                _tray = new System.Windows.Forms.NotifyIcon { Text = "PhotoFrame", Visible = true };
                 try
                 {
-                    var stream = Application.GetResourceStream(
+                    var s = Application.GetResourceStream(
                         new Uri("pack://application:,,,/Resources/Icons/Media001.ico"))?.Stream;
-                    _tray.Icon = stream != null
-                        ? new System.Drawing.Icon(stream)
+                    _tray.Icon = s != null
+                        ? new System.Drawing.Icon(s)
                         : System.Drawing.SystemIcons.Application;
                 }
                 catch { _tray.Icon = System.Drawing.SystemIcons.Application; }
 
                 var menu = new System.Windows.Forms.ContextMenuStrip();
-                menu.Items.Add("Показать",      null, (_, __) => ShowFromTray());
-                menu.Items.Add("Следующее",     null, (_, __) => _ = AdvanceAsync());
-                menu.Items.Add("Пауза / Пуск",  null, (_, __) => { if (_playing) StopSlide(); else StartSlide(); });
+                menu.Items.Add("Показать",     null, (_, __) => ShowFromTray());
+                menu.Items.Add("Следующее",    null, (_, __) => _ = AdvanceAsync());
+                menu.Items.Add("Пауза / Пуск", null, (_, __) => { if (_playing) StopSlide(); else StartSlide(); });
                 menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
-                menu.Items.Add("Настройки",     null, (_, __) => OpenSettings());
+                menu.Items.Add("Настройки",    null, (_, __) => OpenSettings());
                 menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
-                menu.Items.Add("Выход",         null, (_, __) => Close());
+                menu.Items.Add("Выход",        null, (_, __) => Close());
                 _tray.ContextMenuStrip = menu;
                 _tray.DoubleClick     += (_, __) => ShowFromTray();
             }
-            catch { /* Трей недоступен — игнорируем */ }
+            catch { }
         }
 
-        private void ShowFromTray()
-        {
-            Show();
-            WindowState = WindowState.Normal;
-            Activate();
-        }
+        private void ShowFromTray() { Show(); WindowState = WindowState.Normal; Activate(); }
 
-        // ─── ОТКРЫТЬ НАСТРОЙКИ ────────────────────────────────────────────────────
+        // ─── НАСТРОЙКИ ────────────────────────────────────────────────────────────
 
         private void OpenSettings()
         {
             try
             {
-                bool wasPlaying = _playing;
+                bool was = _playing;
                 StopSlide();
-
-                // Создаём окно настроек — Owner задаётся отдельно чтобы избежать
-                // проблем с инициализацией при прямой установке в конструкторе
-                var dlg = new SettingsWindow(_cfg);
-                dlg.Owner = this;
-
+                var dlg = new SettingsWindow(_cfg) { Owner = this };
                 if (dlg.ShowDialog() == true)
                 {
                     _cfg = dlg.Result;
                     SettingsService.Save(_cfg);
-
                     App.ChangeTheme(_cfg.Theme);
-
-                    if (_cfg.EnableMicaEffect) WindowHelper.TryApplyMica(this);
+                    if (_cfg.EnableMicaEffect) _effectApplied = WindowHelper.TryApplyMica(this);
                     else                       WindowHelper.RemoveMica(this);
-
                     SystemIntegration.PreventSleep(_cfg.PreventSleep);
-
-                    _slideTimer.Interval = TimeSpan.FromSeconds(
-                        Math.Max(1, _cfg.SlideshowIntervalSeconds));
+                    _slideTimer.Interval = TimeSpan.FromSeconds(Math.Max(1, _cfg.SlideshowIntervalSeconds));
                     SyncIntervalLabel();
                     SyncPlayModeIcon();
-
-                    // Перезагружаем библиотеку
+                    // Перезапуск watcher если изменилась настройка
+                    _driveWatcher?.Stop();
+                    _driveWatcher?.Dispose();
+                    _driveWatcher = null;
+                    StartRemovableMediaWatcher();
                     _ = ReloadPhotosAsync();
                 }
-                else if (wasPlaying)
-                {
-                    StartSlide();
-                }
+                else if (was) StartSlide();
             }
             catch (Exception ex)
             {
@@ -450,17 +464,15 @@ namespace PhotoFrame
             }
         }
 
-        // ─── ОБРАБОТЧИКИ КНОПОК ───────────────────────────────────────────────────
+        // ─── КНОПКИ ───────────────────────────────────────────────────────────────
 
         private async void OnBtnPrev(object s, RoutedEventArgs e)    => await GoBackAsync();
         private async void OnBtnNext(object s, RoutedEventArgs e)    => await AdvanceAsync();
-
         private void OnBtnPlayPause(object s, RoutedEventArgs e)
-        {
-            if (_playing) StopSlide(); else StartSlide();
-        }
-
-        private void OnBtnSettings(object s, RoutedEventArgs e) => OpenSettings();
+        { if (_playing) StopSlide(); else StartSlide(); }
+        private void OnBtnSettings(object s, RoutedEventArgs e)      => OpenSettings();
+        private void OnBtnFullscreen(object s, RoutedEventArgs e)
+        { if (_fullscreen) ExitFullscreen(); else EnterFullscreen(); }
 
         private void OnBtnTheme(object s, RoutedEventArgs e)
         {
@@ -469,18 +481,15 @@ namespace PhotoFrame
             App.ChangeTheme(_cfg.Theme);
         }
 
+        /// <summary>Переключает 2 состояния: Shuffle ↔ Sequential.</summary>
         private void OnBtnPlayMode(object s, RoutedEventArgs e)
         {
-            // Цикл по 5 режимам
-            _cfg.PlayMode = (PlayMode)(((int)_cfg.PlayMode + 1) % 5);
+            _cfg.PlayMode = _cfg.PlayMode == PlayMode.Sequential
+                ? PlayMode.Shuffle
+                : PlayMode.Sequential;
             SettingsService.Save(_cfg);
             _playlist.Rebuild(_cfg.PlayMode);
             SyncPlayModeIcon();
-        }
-
-        private void OnBtnFullscreen(object s, RoutedEventArgs e)
-        {
-            if (_fullscreen) ExitFullscreen(); else EnterFullscreen();
         }
 
         private void OnIntervalDown(object s, RoutedEventArgs e)
@@ -507,37 +516,20 @@ namespace PhotoFrame
 
         private void OnTitleBarMouseDown(object s, MouseButtonEventArgs e)
         {
-            if (e.ClickCount == 2)
-            {
-                if (_fullscreen) ExitFullscreen(); else EnterFullscreen();
-                return;
-            }
+            if (e.ClickCount == 2) { if (_fullscreen) ExitFullscreen(); else EnterFullscreen(); return; }
             if (e.LeftButton == MouseButtonState.Pressed)
-            {
-                try { DragMove(); } catch { /* игнорируем при Maximized */ }
-            }
+                try { DragMove(); } catch { }
         }
 
         private void OnMinimize(object s, RoutedEventArgs e)
-        {
-            if (_cfg.MinimizeToTray) Hide();
-            else WindowState = WindowState.Minimized;
-        }
+        { if (_cfg.MinimizeToTray) Hide(); else WindowState = WindowState.Minimized; }
 
         private void OnMaximize(object s, RoutedEventArgs e)
         {
             if (WindowState == WindowState.Maximized)
-            {
-                WindowState      = WindowState.Normal;
-                TbMaxIcon.Text   = "\uE922"; // ChromeMaximize
-                BtnMaximize.ToolTip = "Развернуть";
-            }
+            { WindowState = WindowState.Normal;    TbMaxIcon.Text = "\uE922"; }
             else
-            {
-                WindowState      = WindowState.Maximized;
-                TbMaxIcon.Text   = "\uE923"; // ChromeRestore
-                BtnMaximize.ToolTip = "Восстановить";
-            }
+            { WindowState = WindowState.Maximized; TbMaxIcon.Text = "\uE923"; }
         }
 
         private void OnClose(object s, RoutedEventArgs e) => Close();
@@ -545,10 +537,7 @@ namespace PhotoFrame
         private void OnStateChanged(object s, EventArgs e)
         {
             if (!_fullscreen && TbMaxIcon != null)
-            {
-                TbMaxIcon.Text = WindowState == WindowState.Maximized
-                    ? "\uE923" : "\uE922";
-            }
+                TbMaxIcon.Text = WindowState == WindowState.Maximized ? "\uE923" : "\uE922";
         }
 
         // ─── КЛАВИАТУРА ───────────────────────────────────────────────────────────
@@ -556,26 +545,17 @@ namespace PhotoFrame
         private void OnKeyDown(object s, KeyEventArgs e)
         {
             ShowToolbarNow();
-
-            if (App.StartMode == AppStartMode.Screensaver)
-            {
-                Close(); return;
-            }
-
+            if (App.StartMode == AppStartMode.Screensaver) { Close(); return; }
             switch (e.Key)
             {
-                case Key.Right: case Key.Down: case Key.PageDown:
-                    _ = AdvanceAsync(); break;
-                case Key.Left: case Key.Up: case Key.PageUp:
-                    _ = GoBackAsync(); break;
-                case Key.Space:
-                    if (_playing) StopSlide(); else StartSlide(); break;
+                case Key.Right: case Key.Down: case Key.PageDown: _ = AdvanceAsync(); break;
+                case Key.Left:  case Key.Up:   case Key.PageUp:   _ = GoBackAsync();  break;
+                case Key.Space: if (_playing) StopSlide(); else StartSlide();          break;
                 case Key.F: case Key.F11:
-                    if (_fullscreen) ExitFullscreen(); else EnterFullscreen(); break;
+                    if (_fullscreen) ExitFullscreen(); else EnterFullscreen();         break;
                 case Key.Escape:
-                    if (_fullscreen) ExitFullscreen(); else Close(); break;
-                case Key.OemComma
-                    when e.KeyboardDevice.Modifiers == ModifierKeys.Control:
+                    if (_fullscreen) ExitFullscreen(); else Close();                   break;
+                case Key.OemComma when e.KeyboardDevice.Modifiers == ModifierKeys.Control:
                     OpenSettings(); break;
             }
         }
@@ -583,46 +563,30 @@ namespace PhotoFrame
         // ─── МЫШЬ ─────────────────────────────────────────────────────────────────
 
         private void OnMouseMove(object s, MouseEventArgs e) => ShowToolbarNow();
-
-        private void OnMouseLeave(object s, MouseEventArgs e)
-        {
-            if (_fullscreen) _hideTimer.Start();
-        }
+        private void OnMouseLeave(object s, MouseEventArgs e) { if (_fullscreen) _hideTimer.Start(); }
 
         private void OnMouseDown(object s, MouseButtonEventArgs e)
         {
             if (App.StartMode == AppStartMode.Screensaver) { Close(); return; }
-
             if (e.ClickCount == 2)
-            {
-                if (_fullscreen) ExitFullscreen(); else EnterFullscreen();
-                return;
-            }
-
+            { if (_fullscreen) ExitFullscreen(); else EnterFullscreen(); return; }
             if (e.ChangedButton == MouseButton.Left && e.Source == RootGrid)
             {
-                double x = e.GetPosition(RootGrid).X;
-                if (x < RootGrid.ActualWidth / 2) _ = GoBackAsync();
-                else                               _ = AdvanceAsync();
+                if (e.GetPosition(RootGrid).X < RootGrid.ActualWidth / 2) _ = GoBackAsync();
+                else                                                        _ = AdvanceAsync();
             }
         }
 
-        // ─── ТАЧ-ЖЕСТЫ ───────────────────────────────────────────────────────────
+        // ─── ТАЧ ─────────────────────────────────────────────────────────────────
 
         private void OnManipulationStarted(object s, ManipulationStartedEventArgs e)
-        {
-            _touchStartX = e.ManipulationOrigin.X;
-            e.Handled    = true;
-        }
+        { _touchStartX = e.ManipulationOrigin.X; e.Handled = true; }
 
         private void OnManipulationCompleted(object s, ManipulationCompletedEventArgs e)
         {
+            ShowToolbarNow();
             double dx = e.TotalManipulation.Translation.X;
-            if (Math.Abs(dx) >= SwipePx)
-            {
-                if (dx < 0) _ = AdvanceAsync();
-                else        _ = GoBackAsync();
-            }
+            if (Math.Abs(dx) >= SwipePx) { if (dx < 0) _ = AdvanceAsync(); else _ = GoBackAsync(); }
             e.Handled = true;
         }
 
@@ -631,8 +595,8 @@ namespace PhotoFrame
         private void OnClosing(object s, System.ComponentModel.CancelEventArgs e)
         {
             App.ThemeChanged -= OnThemeChanged;
-            _slideTimer.Stop();
-            _hideTimer.Stop();
+            _slideTimer.Stop(); _hideTimer.Stop();
+            _driveWatcher?.Stop(); _driveWatcher?.Dispose();
             SystemIntegration.PreventSleep(false);
             SettingsService.Save(_cfg);
             try { _tray?.Dispose(); } catch { }

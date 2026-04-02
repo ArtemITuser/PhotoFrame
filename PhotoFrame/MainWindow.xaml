@@ -1,9 +1,11 @@
-<!-- MainWindow.xaml — главное окно слайдшоу.
-     ВАЖНО: Все кнопки тулбара имеют ВСТРОЕННЫЙ контент (TextBlock с Segoe MDL2 Assets).
-     Это устраняет NullRef, возникавший при попытке задать контент через код
-     до завершения инициализации окна.
-     Только иконки Play/Pause, Theme, Fullscreen и PlayMode меняются в коде
-     через именованные TextBlock внутри кнопок. -->
+<!-- MainWindow.xaml — v3.1
+     Изменения:
+       • Кнопка PlayMode — только 2 состояния (Shuffle / Sequential), с подписью
+       • Все кнопки тулбара имеют TextBlock-подпись снизу для touchscreen
+       • Touch-режим: IsManipulationEnabled=True на Grid (не только Window)
+       • Все статические иконки — Segoe MDL2 Assets в XAML (не зависит от PNG)
+       • Иконки Play/Pause, Fullscreen, PlayMode меняются через код (.Text)
+-->
 <Window x:Class="PhotoFrame.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -13,18 +15,19 @@
         Background="Black"
         WindowStyle="None"
         AllowsTransparency="False"
-        IsManipulationEnabled="True"
         Loaded="OnLoaded"
         Closing="OnClosing"
         KeyDown="OnKeyDown"
         MouseMove="OnMouseMove"
         MouseDown="OnMouseDown"
         MouseLeave="OnMouseLeave"
-        StateChanged="OnStateChanged"
-        ManipulationStarted="OnManipulationStarted"
-        ManipulationCompleted="OnManipulationCompleted">
+        StateChanged="OnStateChanged">
 
-    <Grid x:Name="RootGrid" ClipToBounds="True">
+    <!-- IsManipulationEnabled на Grid, а не на Window — лучше работает с touch -->
+    <Grid x:Name="RootGrid" ClipToBounds="True"
+          IsManipulationEnabled="True"
+          ManipulationStarted="OnManipulationStarted"
+          ManipulationCompleted="OnManipulationCompleted">
 
         <!-- Чёрный фон -->
         <Rectangle Fill="Black"/>
@@ -62,7 +65,7 @@
         <Border x:Name="OverlayDate"
                 HorizontalAlignment="Right" VerticalAlignment="Bottom"
                 Style="{DynamicResource OverlayBadge}"
-                Margin="0,0,18,72" IsHitTestVisible="False" Visibility="Collapsed">
+                Margin="0,0,18,80" IsHitTestVisible="False" Visibility="Collapsed">
             <TextBlock x:Name="TbDate" Style="{DynamicResource OverlayText}"/>
         </Border>
 
@@ -70,7 +73,7 @@
         <Border x:Name="CounterBadge"
                 HorizontalAlignment="Center" VerticalAlignment="Bottom"
                 Style="{DynamicResource OverlayBadge}"
-                Margin="0,0,0,70" IsHitTestVisible="False">
+                Margin="0,0,0,80" IsHitTestVisible="False">
             <TextBlock x:Name="TbCounter"
                        Style="{DynamicResource OverlayText}"
                        FontSize="12" Opacity="0.8"/>
@@ -80,7 +83,6 @@
         <StackPanel x:Name="EmptyPanel"
                     HorizontalAlignment="Center" VerticalAlignment="Center"
                     Visibility="Collapsed">
-            <!-- Иконка папки через Segoe MDL2 — без зависимости от PNG -->
             <TextBlock Text="&#xE8B7;" FontFamily="Segoe MDL2 Assets"
                        FontSize="72" Foreground="#555"
                        HorizontalAlignment="Center" Margin="0,0,0,16"/>
@@ -98,55 +100,64 @@
         <Border x:Name="ScanPanel" Background="#CC000000" Visibility="Collapsed">
             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                 <TextBlock Text="Поиск фотографий…"
-                           Foreground="White" FontSize="18"
-                           FontFamily="Segoe UI"
+                           Foreground="White" FontSize="18" FontFamily="Segoe UI"
                            HorizontalAlignment="Center" Margin="0,0,0,10"/>
                 <TextBlock x:Name="TbScanPath"
-                           Foreground="#AAA" FontSize="11"
-                           FontFamily="Segoe UI"
+                           Foreground="#AAA" FontSize="11" FontFamily="Segoe UI"
                            HorizontalAlignment="Center"
                            TextTrimming="CharacterEllipsis" MaxWidth="600"/>
             </StackPanel>
         </Border>
 
         <!-- ════════════════════ ТУЛБАР ════════════════════════════ -->
-        <!-- Тулбар в оконном режиме ВСЕГДА виден; в полноэкранном — автоскрывается -->
+        <!-- Высота увеличена до 76px для подписей под кнопками (touch-friendly) -->
         <Border x:Name="Toolbar" VerticalAlignment="Bottom"
-                Background="{DynamicResource ToolbarBgBrush}" Height="62">
+                Background="{DynamicResource ToolbarBgBrush}" Height="76">
             <Border.RenderTransform>
                 <TranslateTransform x:Name="ToolbarSlide" Y="0"/>
             </Border.RenderTransform>
 
-            <Grid Margin="8,0">
+            <Grid Margin="4,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <!-- ── Левая группа: режим воспроизведения + интервал ──── -->
-                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                <!-- ── Левая: режим + интервал ──────────────────────── -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal"
+                            VerticalAlignment="Center">
 
-                    <!-- Режим (shuffle / sequential / random / date) -->
+                    <!-- Кнопка режима: только 2 состояния (Shuffle / Sequential) -->
                     <Button x:Name="BtnPlayMode"
                             Style="{DynamicResource IconButton}"
-                            Width="40" Height="40"
-                            ToolTip="Режим воспроизведения  (клик — следующий режим)"
+                            Width="56" Height="56"
                             Click="OnBtnPlayMode">
-                        <!-- TbPlayModeIcon обновляется в коде при смене режима -->
-                        <TextBlock x:Name="TbPlayModeIcon"
-                                   Text="&#xE8B1;"
-                                   FontFamily="Segoe MDL2 Assets" FontSize="17"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <StackPanel>
+                            <TextBlock x:Name="TbPlayModeIcon"
+                                       Text="&#xE8B1;"
+                                       FontFamily="Segoe MDL2 Assets" FontSize="20"
+                                       HorizontalAlignment="Center"/>
+                            <TextBlock x:Name="TbPlayModeLabel"
+                                       Text="Случайно"
+                                       FontFamily="Segoe UI" FontSize="9"
+                                       Foreground="#CCFFFFFF"
+                                       HorizontalAlignment="Center" Margin="0,1,0,0"/>
+                        </StackPanel>
                     </Button>
 
                     <!-- Уменьшить интервал -->
                     <Button Style="{DynamicResource IconButton}"
-                            Width="34" Height="40"
+                            Width="44" Height="56"
                             ToolTip="Уменьшить интервал"
                             Click="OnIntervalDown">
-                        <TextBlock Text="&#x2212;" FontSize="20"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <StackPanel>
+                            <TextBlock Text="&#x2212;" FontSize="20"
+                                       HorizontalAlignment="Center"/>
+                            <TextBlock Text="Меньше" FontFamily="Segoe UI" FontSize="9"
+                                       Foreground="#CCFFFFFF" HorizontalAlignment="Center"
+                                       Margin="0,1,0,0"/>
+                        </StackPanel>
                     </Button>
 
                     <!-- Значение интервала -->
@@ -154,126 +165,145 @@
                             Padding="8,3" Margin="2,0" VerticalAlignment="Center">
                         <TextBlock x:Name="TbInterval"
                                    Foreground="White" FontSize="13" FontFamily="Segoe UI"
-                                   MinWidth="38" TextAlignment="Center" VerticalAlignment="Center"/>
+                                   MinWidth="38" TextAlignment="Center"/>
                     </Border>
 
                     <!-- Увеличить интервал -->
                     <Button Style="{DynamicResource IconButton}"
-                            Width="34" Height="40"
+                            Width="44" Height="56"
                             ToolTip="Увеличить интервал"
                             Click="OnIntervalUp">
-                        <TextBlock Text="+" FontSize="20"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <StackPanel>
+                            <TextBlock Text="+" FontSize="20"
+                                       HorizontalAlignment="Center"/>
+                            <TextBlock Text="Больше" FontFamily="Segoe UI" FontSize="9"
+                                       Foreground="#CCFFFFFF" HorizontalAlignment="Center"
+                                       Margin="0,1,0,0"/>
+                        </StackPanel>
                     </Button>
                 </StackPanel>
 
-                <!-- ── Центральная группа: навигация ──────────────────── -->
+                <!-- ── Центральная: навигация ──────────────────────── -->
                 <StackPanel Grid.Column="1" Orientation="Horizontal"
                             HorizontalAlignment="Center" VerticalAlignment="Center">
 
-                    <!-- Назад -->
                     <Button x:Name="BtnPrev"
                             Style="{DynamicResource IconButton}"
-                            Width="40" Height="40" ToolTip="Предыдущее  ←"
+                            Width="56" Height="56"
                             Click="OnBtnPrev">
-                        <!-- Segoe MDL2: SkipBack10 \uE892 -->
-                        <TextBlock Text="&#xE892;"
-                                   FontFamily="Segoe MDL2 Assets" FontSize="18"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <StackPanel>
+                            <TextBlock Text="&#xE892;" FontFamily="Segoe MDL2 Assets"
+                                       FontSize="20" HorizontalAlignment="Center"/>
+                            <TextBlock Text="Назад" FontFamily="Segoe UI" FontSize="9"
+                                       Foreground="#CCFFFFFF" HorizontalAlignment="Center"
+                                       Margin="0,1,0,0"/>
+                        </StackPanel>
                     </Button>
 
-                    <!-- Play / Pause — иконка переключается в коде -->
+                    <!-- Play / Pause -->
                     <Button x:Name="BtnPlayPause"
                             Style="{DynamicResource IconButton}"
-                            Width="50" Height="50"
-                            ToolTip="Пауза / Пуск  Пробел"
+                            Width="64" Height="64"
                             Click="OnBtnPlayPause">
-                        <!-- \uE768 = Play, \uE769 = Pause (Segoe MDL2) -->
-                        <TextBlock x:Name="TbPlayIcon"
-                                   Text="&#xE768;"
-                                   FontFamily="Segoe MDL2 Assets" FontSize="22"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <StackPanel>
+                            <TextBlock x:Name="TbPlayIcon"
+                                       Text="&#xE768;"
+                                       FontFamily="Segoe MDL2 Assets" FontSize="24"
+                                       HorizontalAlignment="Center"/>
+                            <TextBlock x:Name="TbPlayLabel"
+                                       Text="Пуск" FontFamily="Segoe UI" FontSize="9"
+                                       Foreground="#CCFFFFFF" HorizontalAlignment="Center"
+                                       Margin="0,1,0,0"/>
+                        </StackPanel>
                     </Button>
 
-                    <!-- Вперёд -->
                     <Button x:Name="BtnNext"
                             Style="{DynamicResource IconButton}"
-                            Width="40" Height="40" ToolTip="Следующее  →"
+                            Width="56" Height="56"
                             Click="OnBtnNext">
-                        <!-- Segoe MDL2: SkipForward10 \uE893 -->
-                        <TextBlock Text="&#xE893;"
-                                   FontFamily="Segoe MDL2 Assets" FontSize="18"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <StackPanel>
+                            <TextBlock Text="&#xE893;" FontFamily="Segoe MDL2 Assets"
+                                       FontSize="20" HorizontalAlignment="Center"/>
+                            <TextBlock Text="Вперёд" FontFamily="Segoe UI" FontSize="9"
+                                       Foreground="#CCFFFFFF" HorizontalAlignment="Center"
+                                       Margin="0,1,0,0"/>
+                        </StackPanel>
                     </Button>
                 </StackPanel>
 
-                <!-- ── Правая группа: тема, настройки, полный экран ──── -->
-                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                <!-- ── Правая: тема, настройки, полный экран ──────── -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal"
+                            VerticalAlignment="Center">
 
-                    <!-- Сменить тему — иконка меняется в коде -->
                     <Button x:Name="BtnTheme"
                             Style="{DynamicResource IconButton}"
-                            Width="40" Height="40" ToolTip="Сменить тему (Тёмная / Светлая)"
+                            Width="56" Height="56"
                             Click="OnBtnTheme">
-                        <!-- \uE708 = Тёмная (луна), \uE706 = Светлая (солнце) - Segoe MDL2 -->
-                        <TextBlock x:Name="TbThemeIcon"
-                                   Text="&#xE706;"
-                                   FontFamily="Segoe MDL2 Assets" FontSize="18"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <StackPanel>
+                            <TextBlock x:Name="TbThemeIcon"
+                                       Text="&#xE706;"
+                                       FontFamily="Segoe MDL2 Assets" FontSize="20"
+                                       HorizontalAlignment="Center"/>
+                            <TextBlock Text="Тема" FontFamily="Segoe UI" FontSize="9"
+                                       Foreground="#CCFFFFFF" HorizontalAlignment="Center"
+                                       Margin="0,1,0,0"/>
+                        </StackPanel>
                     </Button>
 
-                    <!-- Настройки — \uE713 = Gear -->
                     <Button x:Name="BtnSettings"
                             Style="{DynamicResource IconButton}"
-                            Width="40" Height="40" ToolTip="Настройки  Ctrl+,"
+                            Width="56" Height="56"
                             Click="OnBtnSettings">
-                        <TextBlock Text="&#xE713;"
-                                   FontFamily="Segoe MDL2 Assets" FontSize="18"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <StackPanel>
+                            <TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets"
+                                       FontSize="20" HorizontalAlignment="Center"/>
+                            <TextBlock Text="Настройки" FontFamily="Segoe UI" FontSize="9"
+                                       Foreground="#CCFFFFFF" HorizontalAlignment="Center"
+                                       Margin="0,1,0,0"/>
+                        </StackPanel>
                     </Button>
 
-                    <!-- Полный экран — иконка меняется в коде -->
                     <Button x:Name="BtnFullscreen"
                             Style="{DynamicResource IconButton}"
-                            Width="40" Height="40" ToolTip="Полный экран  F / F11"
+                            Width="56" Height="56"
                             Click="OnBtnFullscreen">
-                        <!-- \uE740 = FullScreen, \uE741 = BackToWindow (Segoe MDL2) -->
-                        <TextBlock x:Name="TbFullscreenIcon"
-                                   Text="&#xE740;"
-                                   FontFamily="Segoe MDL2 Assets" FontSize="18"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <StackPanel>
+                            <TextBlock x:Name="TbFullscreenIcon"
+                                       Text="&#xE740;"
+                                       FontFamily="Segoe MDL2 Assets" FontSize="20"
+                                       HorizontalAlignment="Center"/>
+                            <TextBlock x:Name="TbFullscreenLabel"
+                                       Text="Экран" FontFamily="Segoe UI" FontSize="9"
+                                       Foreground="#CCFFFFFF" HorizontalAlignment="Center"
+                                       Margin="0,1,0,0"/>
+                        </StackPanel>
                     </Button>
                 </StackPanel>
             </Grid>
         </Border>
 
-        <!-- ── Строка заголовка (перетаскивание + системные кнопки) ─── -->
-        <Border x:Name="TitleBar" Height="30" VerticalAlignment="Top"
+        <!-- ── Строка заголовка ────────────────────────────────────── -->
+        <Border x:Name="TitleBar" Height="32" VerticalAlignment="Top"
                 Background="Transparent"
                 MouseLeftButtonDown="OnTitleBarMouseDown">
             <Grid Margin="8,0">
-                <TextBlock Text="PhotoFrame" Foreground="#60FFFFFF"
+                <TextBlock x:Name="TbTitleVersion"
+                           Text="PhotoFrame" Foreground="#60FFFFFF"
                            FontSize="12" FontFamily="Segoe UI"
                            VerticalAlignment="Center"/>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                    <!-- Свернуть -->
                     <Button Style="{DynamicResource IconButton}"
-                            Width="30" Height="30"
-                            ToolTip="Свернуть" Click="OnMinimize">
+                            Width="32" Height="32" ToolTip="Свернуть" Click="OnMinimize">
                         <TextBlock Text="&#xE921;" FontFamily="Segoe MDL2 Assets" FontSize="10"/>
                     </Button>
-                    <!-- Развернуть/восстановить -->
                     <Button x:Name="BtnMaximize"
                             Style="{DynamicResource IconButton}"
-                            Width="30" Height="30"
-                            ToolTip="Развернуть" Click="OnMaximize">
+                            Width="32" Height="32" ToolTip="Развернуть" Click="OnMaximize">
                         <TextBlock x:Name="TbMaxIcon"
                                    Text="&#xE922;" FontFamily="Segoe MDL2 Assets" FontSize="10"/>
                     </Button>
-                    <!-- Закрыть -->
                     <Button Style="{DynamicResource IconButton}"
-                            Width="30" Height="30"
-                            ToolTip="Закрыть" Click="OnClose">
+                            Width="32" Height="32" ToolTip="Закрыть" Click="OnClose">
                         <TextBlock Text="&#xE8BB;" FontFamily="Segoe MDL2 Assets" FontSize="10"/>
                     </Button>
                 </StackPanel>
