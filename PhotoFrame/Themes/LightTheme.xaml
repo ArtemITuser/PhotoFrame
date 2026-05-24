@@ -1,0 +1,26 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- ─── Light: светлый фон, тёмный текст ─── -->
+    <SolidColorBrush x:Key="BgBrush"          Color="#F3F3F3"/>
+    <SolidColorBrush x:Key="SurfaceBrush"     Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="Surface2Brush"    Color="#EBEBEB"/>
+    <SolidColorBrush x:Key="BorderBrush"      Color="#C0C0C0"/>
+    <SolidColorBrush x:Key="AccentBrush"      Color="#0067C0"/>
+    <SolidColorBrush x:Key="AccentHoverBrush" Color="#1A74C8"/>
+    <SolidColorBrush x:Key="AccentPressBrush" Color="#005EAD"/>
+    <SolidColorBrush x:Key="TextPrimary"      Color="#111111"/>
+    <SolidColorBrush x:Key="TextSecondary"    Color="#555555"/>
+    <SolidColorBrush x:Key="InputBgBrush"     Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="InputFgBrush"     Color="#111111"/>
+    <SolidColorBrush x:Key="InputBorderBrush" Color="#BBBBBB"/>
+    <SolidColorBrush x:Key="DialogBgBrush"    Color="#F5F5F5"/>
+    <!-- Тулбар: ВСЕГДА тёмный (поверх фото) -->
+    <SolidColorBrush x:Key="ToolbarBgBrush"   Color="#E0151515"/>
+    <!-- Полупрозрачный фон главного окна при светлой теме -->
+    <SolidColorBrush x:Key="MainBgBrush"      Color="#88F0F0F0"/>
+    <SolidColorBrush x:Key="EmptyBgBrush"     Color="#F0F0F0"/>
+    <SolidColorBrush x:Key="OverlayBgBrush"   Color="#CCF5F5F5"/>
+    <SolidColorBrush x:Key="PopupBgBrush"     Color="#F0F5F5F5"/>
+    <SolidColorBrush x:Key="EmptyIconBrush"   Color="#444444"/>
+    <SolidColorBrush x:Key="EmptyTextBrush"   Color="#333333"/>
+</ResourceDictionary>

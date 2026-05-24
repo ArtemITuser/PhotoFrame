@@ -1,0 +1,363 @@
+<!-- Views/SettingsWindow.xaml — v3.5
+     WindowStyle="SingleBorderWindow" — нативная рамка Windows.
+     Background=DialogBgBrush — корректный цвет в обоих темах.
+     Все элементы: DynamicResource, MinHeight≥40, Stylus.IsFlicksEnabled=False.
+-->
+<Window x:Class="PhotoFrame.Views.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Настройки — PhotoFrame"
+        Width="740" Height="640"
+        MinWidth="640" MinHeight="560"
+        WindowStyle="SingleBorderWindow"
+        ResizeMode="NoResize"
+        Background="{DynamicResource DialogBgBrush}"
+        WindowStartupLocation="CenterOwner"
+        Loaded="OnLoaded">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="190"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Боковая навигация -->
+            <Border Grid.Column="0"
+                    Background="{DynamicResource Surface2Brush}"
+                    BorderBrush="{DynamicResource BorderBrush}"
+                    BorderThickness="0,0,1,0">
+                <ListBox x:Name="NavList" Background="Transparent" BorderThickness="0"
+                         Margin="4,8" Stylus.IsFlicksEnabled="False"
+                         SelectionChanged="OnNavChanged">
+                    <ListBoxItem Tag="General"    IsSelected="True" Style="{DynamicResource NavItem}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE713;  " FontFamily="Segoe MDL2 Assets" FontSize="13" Foreground="{DynamicResource TextPrimary}"/>
+                            <TextBlock Text="Основное"  Foreground="{DynamicResource TextPrimary}"/>
+                        </StackPanel>
+                    </ListBoxItem>
+                    <ListBoxItem Tag="Sources" Style="{DynamicResource NavItem}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE8B7;  " FontFamily="Segoe MDL2 Assets" FontSize="13" Foreground="{DynamicResource TextPrimary}"/>
+                            <TextBlock Text="Источники" Foreground="{DynamicResource TextPrimary}"/>
+                        </StackPanel>
+                    </ListBoxItem>
+                    <ListBoxItem Tag="Overlays" Style="{DynamicResource NavItem}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE7C1;  " FontFamily="Segoe MDL2 Assets" FontSize="13" Foreground="{DynamicResource TextPrimary}"/>
+                            <TextBlock Text="Наложения" Foreground="{DynamicResource TextPrimary}"/>
+                        </StackPanel>
+                    </ListBoxItem>
+                    <ListBoxItem Tag="Playback" Style="{DynamicResource NavItem}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE768;  " FontFamily="Segoe MDL2 Assets" FontSize="13" Foreground="{DynamicResource TextPrimary}"/>
+                            <TextBlock Text="Воспроизведение" Foreground="{DynamicResource TextPrimary}"/>
+                        </StackPanel>
+                    </ListBoxItem>
+                    <ListBoxItem Tag="Appearance" Style="{DynamicResource NavItem}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE771;  " FontFamily="Segoe MDL2 Assets" FontSize="13" Foreground="{DynamicResource TextPrimary}"/>
+                            <TextBlock Text="Внешний вид" Foreground="{DynamicResource TextPrimary}"/>
+                        </StackPanel>
+                    </ListBoxItem>
+                    <ListBoxItem Tag="System" Style="{DynamicResource NavItem}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE756;  " FontFamily="Segoe MDL2 Assets" FontSize="13" Foreground="{DynamicResource TextPrimary}"/>
+                            <TextBlock Text="Система"  Foreground="{DynamicResource TextPrimary}"/>
+                        </StackPanel>
+                    </ListBoxItem>
+                    <ListBoxItem Tag="Power" Style="{DynamicResource NavItem}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE945;  " FontFamily="Segoe MDL2 Assets" FontSize="13" Foreground="{DynamicResource TextPrimary}"/>
+                            <TextBlock Text="Питание"  Foreground="{DynamicResource TextPrimary}"/>
+                        </StackPanel>
+                    </ListBoxItem>
+                    <ListBoxItem Tag="About" Style="{DynamicResource NavItem}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE946;  " FontFamily="Segoe MDL2 Assets" FontSize="13" Foreground="{DynamicResource TextPrimary}"/>
+                            <TextBlock Text="О программе" Foreground="{DynamicResource TextPrimary}"/>
+                        </StackPanel>
+                    </ListBoxItem>
+                </ListBox>
+            </Border>
+
+            <!-- Содержимое -->
+            <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto"
+                          Background="Transparent"
+                          PanningMode="VerticalFirst"
+                          Stylus.IsFlicksEnabled="False">
+                <StackPanel x:Name="ContentArea" Margin="20,14">
+
+                    <!-- ══ ОСНОВНОЕ ══ -->
+                    <StackPanel x:Name="PGeneral">
+                        <TextBlock Text="ОСНОВНОЕ" Style="{DynamicResource SectionHeader}"/>
+                        <TextBlock Text="Интервал смены фото (секунды):"
+                                   Foreground="{DynamicResource TextPrimary}" Margin="0,8,0,4"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <Slider x:Name="SldInterval" Minimum="1" Maximum="300"
+                                    Width="260" VerticalAlignment="Center"
+                                    ValueChanged="OnIntervalChanged"/>
+                            <TextBlock x:Name="TbIntervalVal" VerticalAlignment="Center"
+                                       Margin="10,0" Foreground="{DynamicResource TextPrimary}"/>
+                        </StackPanel>
+                        <CheckBox x:Name="ChkAutoStart" Content="Запускать слайдшоу при старте"/>
+                        <CheckBox x:Name="ChkLoop"      Content="Зациклить воспроизведение"/>
+                        <CheckBox x:Name="ChkRecursive" Content="Включать подпапки"/>
+                        <TextBlock Text="СЧЁТЧИК ФОТОГРАФИЙ" Style="{DynamicResource SectionHeader}"/>
+                        <TextBlock Text="Формат:" Foreground="{DynamicResource TextPrimary}" Margin="0,4,0,4"/>
+                        <ComboBox x:Name="CmbCounterFormat" Width="300" HorizontalAlignment="Left"/>
+                    </StackPanel>
+
+                    <!-- ══ ИСТОЧНИКИ ══ -->
+                    <StackPanel x:Name="PSources" Visibility="Collapsed">
+                        <TextBlock Text="ИСТОЧНИКИ ФОТОГРАФИЙ" Style="{DynamicResource SectionHeader}"/>
+                        <Border Background="{DynamicResource Surface2Brush}"
+                                BorderBrush="{DynamicResource BorderBrush}"
+                                BorderThickness="1" CornerRadius="4" Padding="10,8" Margin="0,0,0,6">
+                            <StackPanel>
+                                <TextBlock x:Name="TbIndexStats"
+                                           Text="Добавьте папки для начала"
+                                           Foreground="{DynamicResource TextSecondary}" FontSize="12"/>
+                                <TextBlock x:Name="TbIndexHint"
+                                           Text="Только фотографии учитываются в счётчике."
+                                           Foreground="{DynamicResource TextSecondary}" FontSize="11" Margin="0,2,0,0"/>
+                            </StackPanel>
+                        </Border>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                            <Button Content="&#xE896;  Список (.txt)" Style="{DynamicResource SecondaryButton}"
+                                    Margin="0,0,6,0" Click="OnExportTxt"/>
+                            <Button Content="&#xE8A1;  CSV" Style="{DynamicResource SecondaryButton}"
+                                    Click="OnExportCsv"/>
+                        </StackPanel>
+                        <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                                CornerRadius="4" Height="130" Margin="0,0,0,8"
+                                Background="{DynamicResource InputBgBrush}">
+                            <ListBox x:Name="PathList" Background="Transparent" BorderThickness="0"
+                                     Stylus.IsFlicksEnabled="False">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding}" Padding="4,3" FontSize="12"
+                                                   Foreground="{DynamicResource TextPrimary}"/>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Border>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <Button Content="+ Папка"  Style="{DynamicResource AccentButton}"    Margin="0,0,6,0" Click="OnAddFolder"/>
+                            <Button Content="+ Диск"   Style="{DynamicResource SecondaryButton}" Margin="0,0,6,0" Click="OnAddDrive"/>
+                            <Button Content="Удалить"  Style="{DynamicResource SecondaryButton}" Click="OnRemovePath"/>
+                        </StackPanel>
+                        <TextBlock Text="Быстрый выбор:" Foreground="{DynamicResource TextSecondary}" Margin="0,0,0,6"/>
+                        <WrapPanel x:Name="DriveBtns" Margin="0,0,0,10"/>
+                        <TextBlock Text="СЪЁМНЫЕ НОСИТЕЛИ" Style="{DynamicResource SectionHeader}"/>
+                        <CheckBox x:Name="ChkWatchRemovable" Content="Автоматически добавлять со съёмных носителей"/>
+                        <CheckBox x:Name="ChkSuggestRemovable" Content="Спрашивать при подключении носителя с фото"/>
+                        <TextBlock Text="ПРЕДПРОСМОТР" Style="{DynamicResource SectionHeader}"/>
+                        <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                                CornerRadius="4" MinHeight="90" Padding="6"
+                                Background="{DynamicResource Surface2Brush}">
+                            <StackPanel x:Name="PreviewPanel"/>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- ══ НАЛОЖЕНИЯ ══ -->
+                    <StackPanel x:Name="POverlays" Visibility="Collapsed">
+                        <TextBlock Text="НАЛОЖЕНИЯ НА ФОТО" Style="{DynamicResource SectionHeader}"/>
+                        <CheckBox x:Name="ChkDir"  Content="Директория файла — левый верхний угол"/>
+                        <CheckBox x:Name="ChkDate" Content="Дата съёмки из EXIF — правый нижний угол"/>
+                        <CheckBox x:Name="ChkLoc"  Content="GPS-координаты — верх по центру" Margin="0,0,0,14"/>
+                        <TextBlock Text="Размер шрифта:" Foreground="{DynamicResource TextPrimary}" Margin="0,0,0,4"/>
+                        <StackPanel Orientation="Horizontal">
+                            <Slider x:Name="SldFont" Minimum="10" Maximum="28" Width="180"
+                                    VerticalAlignment="Center" ValueChanged="OnFontChanged"/>
+                            <TextBlock x:Name="TbFontVal" VerticalAlignment="Center"
+                                       Margin="10,0" Foreground="{DynamicResource TextPrimary}"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <!-- ══ ВОСПРОИЗВЕДЕНИЕ ══ -->
+                    <StackPanel x:Name="PPlayback" Visibility="Collapsed">
+                        <TextBlock Text="ПОРЯДОК ВОСПРОИЗВЕДЕНИЯ" Style="{DynamicResource SectionHeader}"/>
+                        <TextBlock Text="Режим:" Foreground="{DynamicResource TextPrimary}" Margin="0,8,0,4"/>
+                        <ComboBox x:Name="CmbPlayMode" Width="300" HorizontalAlignment="Left" Margin="0,0,0,4"/>
+                        <TextBlock TextWrapping="Wrap" FontSize="11" Margin="0,0,0,16"
+                                   Foreground="{DynamicResource TextSecondary}"
+                                   Text="Кнопка ⇄ в тулбаре: Случайно ↔ По порядку. Остальные режимы — здесь."/>
+                        <TextBlock Text="АНИМАЦИЯ ПЕРЕХОДОВ" Style="{DynamicResource SectionHeader}"/>
+                        <TextBlock Text="Тип:" Foreground="{DynamicResource TextPrimary}" Margin="0,8,0,4"/>
+                        <ComboBox x:Name="CmbTransition" Width="300" HorizontalAlignment="Left" Margin="0,0,0,10"/>
+                        <TextBlock Text="Длительность (секунды):" Foreground="{DynamicResource TextPrimary}" Margin="0,0,0,4"/>
+                        <StackPanel Orientation="Horizontal">
+                            <Slider x:Name="SldDuration" Minimum="0.2" Maximum="3.0" Width="200"
+                                    VerticalAlignment="Center" ValueChanged="OnDurChanged"/>
+                            <TextBlock x:Name="TbDurVal" VerticalAlignment="Center"
+                                       Margin="10,0" Foreground="{DynamicResource TextPrimary}"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <!-- ══ ВНЕШНИЙ ВИД ══ -->
+                    <StackPanel x:Name="PAppearance" Visibility="Collapsed">
+                        <TextBlock Text="ТЕМА ОФОРМЛЕНИЯ" Style="{DynamicResource SectionHeader}"/>
+                        <TextBlock TextWrapping="Wrap" Margin="0,0,0,8" FontSize="12"
+                                   Foreground="{DynamicResource TextSecondary}"
+                                   Text="Системная — следует Windows. Светлая: тёмный текст, светлый фон. Тёмная: светлый текст, тёмный фон."/>
+                        <ComboBox x:Name="CmbTheme" Width="200" HorizontalAlignment="Left" Margin="0,0,0,10"/>
+                        <CheckBox x:Name="ChkMica" Content="Прозрачность: Mica (Win11) / Acrylic (Win10)"/>
+                        <TextBlock x:Name="TbEffectStatus" FontSize="11" Margin="0,4,0,16"
+                                   Foreground="{DynamicResource TextSecondary}"/>
+                        <TextBlock Text="РЕЖИМ ИНТЕРФЕЙСА (ЭКСПЕРИМЕНТАЛЬНО)" Style="{DynamicResource SectionHeader}"/>
+                        <ComboBox x:Name="CmbUiMode" Width="260" HorizontalAlignment="Left" Margin="0,6,0,4"/>
+                        <TextBlock TextWrapping="Wrap" FontSize="11" Margin="0,0,0,12"
+                                   Foreground="{DynamicResource TextSecondary}"
+                                   Text="Aero7: имитирует стиль Windows 7 Aero Glass с PNG иконками и глянцевыми кнопками."/>
+                        <TextBlock Text="LIVE TILES" Style="{DynamicResource SectionHeader}"/>
+                        <CheckBox x:Name="ChkLiveTiles" Content="Обновлять плитку в меню Пуск (только ClickOnce)"/>
+                        <CheckBox x:Name="ChkLiveTilesLarge"
+                                  Content="Включая крупную плитку 310×310"
+                                  Margin="20,0,0,0"/>
+                        <TextBlock TextWrapping="Wrap" FontSize="11" Margin="0,4,0,8"
+                                   Foreground="{DynamicResource TextSecondary}"
+                                   Text="Размеры: 71×71 · 150×150 · 310×150 · 310×310. Фото — фон каждой плитки напрямую."/>
+                        <TextBlock Text="Интервал обновления плитки (независимо от слайдшоу)"
+                                   FontSize="12" Foreground="{DynamicResource TextSecondary}"
+                                   Margin="0,4,0,2"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,2">
+                            <Slider x:Name="SldTileCycle" Minimum="0" Maximum="300"
+                                    Width="200" TickFrequency="5" IsSnapToTickEnabled="True"
+                                    ValueChanged="OnTileCycleChanged" Margin="0,0,10,0"/>
+                            <TextBlock x:Name="TbTileCycleVal" Text="Как слайдшоу"
+                                       VerticalAlignment="Center" FontSize="12"
+                                       Foreground="{DynamicResource TextSecondary}"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <!-- ══ СИСТЕМА ══ -->
+                    <StackPanel x:Name="PSystem" Visibility="Collapsed">
+                        <TextBlock Text="АВТОЗАГРУЗКА" Style="{DynamicResource SectionHeader}"/>
+                        <CheckBox x:Name="ChkAutorun"   Content="Запускать при входе в Windows (HKCU\Run)"/>
+                        <CheckBox x:Name="ChkMinToTray" Content="Сворачивать в трей вместо закрытия" Margin="0,0,0,16"/>
+                        <TextBlock Text="СКРИНСЕЙВЕР" Style="{DynamicResource SectionHeader}"/>
+                        <TextBlock TextWrapping="Wrap" FontSize="11" Margin="0,0,0,8"
+                                   Foreground="{DynamicResource TextSecondary}"
+                                   Text="При регистрации файл копируется в System32 — потребуется UAC.&#10;Аргументы: /s — запуск, /c — настройки, /p — предпросмотр."/>
+                        <CheckBox x:Name="ChkScrReg"
+                                  Content="Зарегистрировать как скринсейвер системы"
+                                  Margin="0,0,0,6" Click="OnScrRegChanged"/>
+                        <TextBlock x:Name="TbScrStatus" FontSize="12"
+                                   Foreground="{DynamicResource TextSecondary}" Margin="0,0,0,10"/>
+                        <TextBlock Text="Задержка (мин):" Foreground="{DynamicResource TextPrimary}" Margin="0,0,0,4"/>
+                        <StackPanel Orientation="Horizontal">
+                            <Slider x:Name="SldScrDelay" Minimum="1" Maximum="60" Width="200"
+                                    VerticalAlignment="Center" ValueChanged="OnScrDelayChanged"/>
+                            <TextBlock x:Name="TbScrDelayVal" VerticalAlignment="Center"
+                                       Margin="10,0" Foreground="{DynamicResource TextPrimary}"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <!-- ══ ПИТАНИЕ ══ -->
+                    <StackPanel x:Name="PPower" Visibility="Collapsed">
+                        <TextBlock Text="УПРАВЛЕНИЕ ПИТАНИЕМ" Style="{DynamicResource SectionHeader}"/>
+                        <CheckBox x:Name="ChkNoSleep" Content="Запретить переход в режим сна" Margin="0,8,0,16"/>
+                        <TextBlock Text="Отключить монитор через (мин; 0 = не управлять):"
+                                   Foreground="{DynamicResource TextPrimary}" Margin="0,0,0,4"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                            <Slider x:Name="SldMonOff" Minimum="0" Maximum="120" Width="200"
+                                    VerticalAlignment="Center" ValueChanged="OnMonOffChanged"/>
+                            <TextBlock x:Name="TbMonOffVal" VerticalAlignment="Center"
+                                       Margin="10,0" Foreground="{DynamicResource TextPrimary}"/>
+                        </StackPanel>
+                        <TextBlock Text="Перевести в сон через (мин; 0 = не управлять):"
+                                   Foreground="{DynamicResource TextPrimary}" Margin="0,0,0,4"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                            <Slider x:Name="SldSleep" Minimum="0" Maximum="180" Width="200"
+                                    VerticalAlignment="Center" ValueChanged="OnSleepChanged"/>
+                            <TextBlock x:Name="TbSleepVal" VerticalAlignment="Center"
+                                       Margin="10,0" Foreground="{DynamicResource TextPrimary}"/>
+                        </StackPanel>
+                        <Button Content="Применить параметры питания сейчас"
+                                Style="{DynamicResource SecondaryButton}"
+                                HorizontalAlignment="Left" Click="OnApplyPower"/>
+                    </StackPanel>
+
+                    <!-- ══ О ПРОГРАММЕ ══ -->
+                    <StackPanel x:Name="PAbout" Visibility="Collapsed">
+                        <TextBlock Text="О ПРОГРАММЕ" Style="{DynamicResource SectionHeader}"/>
+                        <!-- 3D icon loaded at runtime from AppIcon3D.png -->
+                        <Image x:Name="About3DIcon" Width="96" Height="96"
+                               HorizontalAlignment="Left" Margin="0,8,0,8"
+                               Visibility="Collapsed"
+                               RenderOptions.BitmapScalingMode="HighQuality"/>
+                        <TextBlock x:Name="TbAboutVersion" Text="PhotoFrame"
+                                   FontSize="18" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextPrimary}" Margin="0,0,0,4"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                            <TextBlock Text="© 2025 Ochkin Artyom ("
+                                       Foreground="{DynamicResource TextSecondary}" FontSize="12"/>
+                            <Button Content="ArtemITuser" Style="{DynamicResource LinkButton}"
+                                    FontSize="12" Click="OnOpenGitHub"/>
+                            <TextBlock Text="). BSL-1.0 License."
+                                       Foreground="{DynamicResource TextSecondary}" FontSize="12"/>
+                        </StackPanel>
+                        <TextBlock Text="CLICKONCE / РАЗВЁРТЫВАНИЕ" Style="{DynamicResource SectionHeader}"/>
+                        <Border Background="{DynamicResource Surface2Brush}"
+                                BorderBrush="{DynamicResource BorderBrush}"
+                                BorderThickness="1" CornerRadius="4" Padding="10,8" Margin="0,6,0,14">
+                            <TextBlock x:Name="TbClickOnceInfo"
+                                       Foreground="{DynamicResource TextSecondary}"
+                                       TextWrapping="Wrap" FontSize="12"/>
+                        </Border>
+                        <TextBlock Text="ПРОВЕРКА ОБНОВЛЕНИЙ" Style="{DynamicResource SectionHeader}"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,6,0,8">
+                            <Button Content="Проверить (GitHub)" Style="{DynamicResource SecondaryButton}"
+                                    Margin="0,0,10,0" Click="OnCheckUpdates"/>
+                            <Button Content="Страница релизов" Style="{DynamicResource SecondaryButton}"
+                                    Click="OnOpenReleases"/>
+                        </StackPanel>
+                        <TextBlock x:Name="TbUpdateStatus" Foreground="{DynamicResource TextSecondary}"
+                                   TextWrapping="Wrap" FontSize="12" Margin="0,0,0,16"/>
+                        <TextBlock Text="РЕПОЗИТОРИЙ" Style="{DynamicResource SectionHeader}"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,6,0,4">
+                            <TextBlock Text="&#xE8A5;  " FontFamily="Segoe MDL2 Assets"
+                                       FontSize="16" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextPrimary}"/>
+                            <Button Content="github.com/ArtemITuser/PhotoFrame"
+                                    Style="{DynamicResource LinkButton}"
+                                    VerticalAlignment="Center" Click="OnOpenGitHub"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+
+        <!-- Нижняя панель -->
+        <Border Grid.Row="1" Background="{DynamicResource Surface2Brush}"
+                BorderBrush="{DynamicResource BorderBrush}"
+                BorderThickness="0,1,0,0" Padding="16,9">
+            <Grid>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock x:Name="TbFooterVer"
+                               Foreground="{DynamicResource TextSecondary}" FontSize="11"
+                               VerticalAlignment="Center"/>
+                    <TextBlock Text=" · " Foreground="{DynamicResource TextSecondary}"
+                               FontSize="11" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="TbStorage"
+                               Foreground="{DynamicResource TextSecondary}" FontSize="11"
+                               VerticalAlignment="Center" MaxWidth="260"
+                               TextTrimming="CharacterEllipsis"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button Content="Отмена"    Style="{DynamicResource SecondaryButton}"
+                            Margin="0,0,8,0" Click="OnCancel"/>
+                    <Button Content="Применить" Style="{DynamicResource AccentButton}"
+                            Click="OnApply"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

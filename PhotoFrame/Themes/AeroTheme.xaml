@@ -1,0 +1,633 @@
+<!-- Themes/AeroTheme.xaml — v4.0 (build 43)
+     Стратегия "ghost activation":
+     Этот словарь ПЕРЕОПРЕДЕЛЯЕТ те же ключи, что CommonStyles.xaml:
+       AccentButton    → Aero7 glass blue button
+       SecondaryButton → Aero7 silver glass button
+       NavItem         → Aero7 glass pill nav item
+       SectionHeader   → Aero7 blue bold + drop shadow
+       TargetType CheckBox (без ключа) → Aero7 glass checkbox
+       ToolbarBgBrush  → тёмно-синий Aero toolbar bg
+     DynamicResource в SettingsWindow.xaml / MainWindow.xaml
+     подхватывает смену МГНОВЕННО без кода — просто добавляем/убираем словарь.
+     Toolbar buttons (ToolbarButton) в MainWindow меняются кодом в ApplyUiModeStyles().
+     Caption buttons меняются кодом в ApplyUiModeStyles().
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- ══ Aero palette ══════════════════════════════════════════════════════ -->
+    <LinearGradientBrush x:Key="AeroBlueFaceGrad" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FFD4EDFC" Offset="0"/>
+        <GradientStop Color="#FF6DB8F0" Offset="0.48"/>
+        <GradientStop Color="#FF3B8ED6" Offset="0.50"/>
+        <GradientStop Color="#FF5AABF0" Offset="1"/>
+    </LinearGradientBrush>
+
+    <LinearGradientBrush x:Key="AeroSilverFaceGrad" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FFFBFBFB" Offset="0"/>
+        <GradientStop Color="#FFD4D4D4" Offset="0.48"/>
+        <GradientStop Color="#FFB8B8B8" Offset="0.50"/>
+        <GradientStop Color="#FFCDCDCD" Offset="1"/>
+    </LinearGradientBrush>
+
+    <LinearGradientBrush x:Key="AeroGlossGrad" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#88FFFFFF" Offset="0"/>
+        <GradientStop Color="#11FFFFFF" Offset="1"/>
+    </LinearGradientBrush>
+
+    <!-- Toolbar background override for Aero -->
+    <SolidColorBrush x:Key="ToolbarBgBrush" Color="#E5122840"/>
+
+    <!-- Dialog background for Aero (для Settings) -->
+    <SolidColorBrush x:Key="DialogBgBrush"  Color="#F0EEF6FB"/>
+    <SolidColorBrush x:Key="Surface2Brush"  Color="#E0EAF5"/>
+    <SolidColorBrush x:Key="SurfaceBrush"   Color="#EBF3FA"/>
+    <SolidColorBrush x:Key="BorderBrush"    Color="#7BA5CC"/>
+    <SolidColorBrush x:Key="TextPrimary"    Color="#0D2138"/>
+    <SolidColorBrush x:Key="TextSecondary"  Color="#3A5A7A"/>
+    <SolidColorBrush x:Key="AccentBrush"    Color="#0057A8"/>
+    <SolidColorBrush x:Key="AccentHoverBrush"  Color="#1A6AB8"/>
+    <SolidColorBrush x:Key="AccentPressBrush"  Color="#004090"/>
+    <SolidColorBrush x:Key="InputBgBrush"   Color="#FAFCFF"/>
+    <SolidColorBrush x:Key="InputFgBrush"   Color="#0D2138"/>
+    <SolidColorBrush x:Key="InputBorderBrush" Color="#88AED6"/>
+    <SolidColorBrush x:Key="PopupBgBrush"   Color="#F0EEF6FB"/>
+    <SolidColorBrush x:Key="EmptyIconBrush" Color="#4A7AB0"/>
+    <SolidColorBrush x:Key="EmptyTextBrush" Color="#2A4A6A"/>
+
+    <!-- ══ AccentButton — Aero7 glass blue (переопределяет CommonStyles) ════ -->
+    <Style x:Key="AccentButton" TargetType="Button">
+        <Setter Property="Foreground"             Value="White"/>
+        <Setter Property="BorderThickness"        Value="1"/>
+        <Setter Property="Padding"                Value="18,6"/>
+        <Setter Property="MinHeight"              Value="34"/>
+        <Setter Property="FontSize"               Value="13"/>
+        <Setter Property="FontFamily"             Value="Segoe UI"/>
+        <Setter Property="FontWeight"             Value="SemiBold"/>
+        <Setter Property="Cursor"                 Value="Hand"/>
+        <Setter Property="Stylus.IsFlicksEnabled" Value="False"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid>
+                        <Border x:Name="Outer" CornerRadius="5" BorderThickness="1">
+                            <Border.BorderBrush>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                    <GradientStop Color="#FF8EC7F8" Offset="0"/>
+                                    <GradientStop Color="#FF2B7CC5" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.BorderBrush>
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                    <GradientStop Color="#FFD4EDFC" Offset="0"/>
+                                    <GradientStop Color="#FF6DB8F0" Offset="0.48"/>
+                                    <GradientStop Color="#FF3B8ED6" Offset="0.50"/>
+                                    <GradientStop Color="#FF5AABF0" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.Background>
+                        </Border>
+                        <Border x:Name="Gloss" CornerRadius="4,4,0,0"
+                                Margin="1,1,1,0" VerticalAlignment="Top" Height="12">
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                    <GradientStop Color="#88FFFFFF" Offset="0"/>
+                                    <GradientStop Color="#11FFFFFF" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.Background>
+                        </Border>
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"
+                                          Margin="{TemplateBinding Padding}"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Outer" Property="Opacity" Value="0.82"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Outer" Property="Opacity" Value="0.62"/>
+                            <Setter TargetName="Gloss" Property="Opacity" Value="0.2"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Outer" Property="Opacity" Value="0.4"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ══ SecondaryButton — Aero7 silver glass (переопределяет CommonStyles) -->
+    <Style x:Key="SecondaryButton" TargetType="Button">
+        <Setter Property="Foreground"             Value="#FF1A3A5A"/>
+        <Setter Property="BorderThickness"        Value="1"/>
+        <Setter Property="Padding"                Value="16,5"/>
+        <Setter Property="MinHeight"              Value="34"/>
+        <Setter Property="FontSize"               Value="13"/>
+        <Setter Property="FontFamily"             Value="Segoe UI"/>
+        <Setter Property="Cursor"                 Value="Hand"/>
+        <Setter Property="Stylus.IsFlicksEnabled" Value="False"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid>
+                        <Border x:Name="Outer" CornerRadius="5" BorderThickness="1">
+                            <Border.BorderBrush>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                    <GradientStop Color="#FFBBBBBB" Offset="0"/>
+                                    <GradientStop Color="#FF888888" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.BorderBrush>
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                    <GradientStop Color="#FFFBFBFB" Offset="0"/>
+                                    <GradientStop Color="#FFD8D8D8" Offset="0.48"/>
+                                    <GradientStop Color="#FFBEBEBE" Offset="0.50"/>
+                                    <GradientStop Color="#FFD0D0D0" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.Background>
+                        </Border>
+                        <Border x:Name="Gloss" CornerRadius="4,4,0,0"
+                                Margin="1,1,1,0" VerticalAlignment="Top" Height="12">
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                    <GradientStop Color="#77FFFFFF" Offset="0"/>
+                                    <GradientStop Color="#11FFFFFF" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.Background>
+                        </Border>
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"
+                                          Margin="{TemplateBinding Padding}"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Outer" Property="Opacity" Value="0.82"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Outer" Property="Opacity" Value="0.60"/>
+                            <Setter TargetName="Gloss" Property="Opacity" Value="0.2"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Outer" Property="Opacity" Value="0.4"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ══ NavItem — Aero7 glass pill (переопределяет CommonStyles) ══════════ -->
+    <Style x:Key="NavItem" TargetType="ListBoxItem">
+        <Setter Property="Foreground"                 Value="#FF1A3A5A"/>
+        <Setter Property="Background"                 Value="Transparent"/>
+        <Setter Property="FontSize"                   Value="13"/>
+        <Setter Property="FontFamily"                 Value="Segoe UI"/>
+        <Setter Property="Padding"                    Value="14,12"/>
+        <Setter Property="Cursor"                     Value="Hand"/>
+        <Setter Property="MinHeight"                  Value="44"/>
+        <Setter Property="Stylus.IsFlicksEnabled"     Value="False"/>
+        <Setter Property="HorizontalContentAlignment" Value="Left"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListBoxItem">
+                    <Grid>
+                        <Border x:Name="Bd" CornerRadius="5" BorderThickness="1"
+                                BorderBrush="Transparent" Background="Transparent"
+                                Padding="{TemplateBinding Padding}" Margin="4,1">
+                            <ContentPresenter/>
+                        </Border>
+                        <Border x:Name="Gloss" CornerRadius="4,4,0,0"
+                                Margin="5,2,5,0" Height="10"
+                                VerticalAlignment="Top" Opacity="0">
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                    <GradientStop Color="#55FFFFFF" Offset="0"/>
+                                    <GradientStop Color="#00FFFFFF" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.Background>
+                        </Border>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background">
+                                <Setter.Value>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                        <GradientStop Color="#99D4EDFC" Offset="0"/>
+                                        <GradientStop Color="#776DB8F0" Offset="1"/>
+                                    </LinearGradientBrush>
+                                </Setter.Value>
+                            </Setter>
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="#AA8EC7F8"/>
+                            <Setter TargetName="Gloss" Property="Opacity" Value="1"/>
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="Bd" Property="Background">
+                                <Setter.Value>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                        <GradientStop Color="#FFD4EDFC" Offset="0"/>
+                                        <GradientStop Color="#CC6DB8F0" Offset="0.48"/>
+                                        <GradientStop Color="#BB3B8ED6" Offset="0.50"/>
+                                        <GradientStop Color="#CC5AABF0" Offset="1"/>
+                                    </LinearGradientBrush>
+                                </Setter.Value>
+                            </Setter>
+                            <Setter TargetName="Bd" Property="BorderBrush">
+                                <Setter.Value>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                        <GradientStop Color="#FF8EC7F8" Offset="0"/>
+                                        <GradientStop Color="#FF2B7CC5" Offset="1"/>
+                                    </LinearGradientBrush>
+                                </Setter.Value>
+                            </Setter>
+                            <Setter TargetName="Gloss" Property="Opacity" Value="1"/>
+                            <Setter Property="Foreground" Value="#FF003F80"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ══ SectionHeader — Aero7 (переопределяет CommonStyles) ══════════════ -->
+    <Style x:Key="SectionHeader" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="#FF1A5A9A"/>
+        <Setter Property="FontSize"   Value="11"/>
+        <Setter Property="FontWeight" Value="Bold"/>
+        <Setter Property="FontFamily" Value="Segoe UI"/>
+        <Setter Property="Margin"     Value="0,14,0,6"/>
+        <Setter Property="Effect">
+            <Setter.Value>
+                <DropShadowEffect Color="#66B8DCFA" Direction="270"
+                                  ShadowDepth="1" BlurRadius="2" Opacity="0.7"/>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ══ CheckBox — Aero7 glass (переопределяет TargetType без ключа) ═════ -->
+    <Style TargetType="CheckBox">
+        <Setter Property="Foreground"             Value="{DynamicResource TextPrimary}"/>
+        <Setter Property="FontSize"               Value="13"/>
+        <Setter Property="FontFamily"             Value="Segoe UI"/>
+        <Setter Property="Cursor"                 Value="Hand"/>
+        <Setter Property="MinHeight"              Value="40"/>
+        <Setter Property="Padding"                Value="6,8"/>
+        <Setter Property="Margin"                 Value="0,3"/>
+        <Setter Property="Stylus.IsFlicksEnabled" Value="False"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="CheckBox">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <!-- Glass box -->
+                        <Border x:Name="Box" Width="18" Height="18" CornerRadius="3"
+                                BorderThickness="1" VerticalAlignment="Center"
+                                Margin="0,0,7,0" SnapsToDevicePixels="True">
+                            <Border.BorderBrush>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                    <GradientStop Color="#FF8EC7F8" Offset="0"/>
+                                    <GradientStop Color="#FF2B7CC5" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.BorderBrush>
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                    <GradientStop Color="#FFE8F4FD" Offset="0"/>
+                                    <GradientStop Color="#FFB8DAFA" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.Background>
+                            <!-- Gloss top -->
+                            <Border CornerRadius="2,2,0,0" VerticalAlignment="Top"
+                                    Height="7" Margin="1,1,1,0">
+                                <Border.Background>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                        <GradientStop Color="#88FFFFFF" Offset="0"/>
+                                        <GradientStop Color="#11FFFFFF" Offset="1"/>
+                                    </LinearGradientBrush>
+                                </Border.Background>
+                            </Border>
+                        </Border>
+                        <!-- Check mark -->
+                        <TextBlock x:Name="Mark" Text="✔" FontSize="11"
+                                   Foreground="#FF1A6BB5" FontWeight="Bold"
+                                   VerticalAlignment="Center"
+                                   Margin="-24,0,6,0"
+                                   Visibility="Collapsed"
+                                   IsHitTestVisible="False"/>
+                        <ContentPresenter VerticalAlignment="Center"
+                                          RecognizesAccessKey="True"/>
+                    </StackPanel>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Mark" Property="Visibility"
+                                    Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Box" Property="BorderBrush"
+                                    Value="#FF5AABF0"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Box" Property="Opacity" Value="0.4"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ══ Aero7ToolbarButton — только для MainWindow toolbar (код-бехайнд) ═ -->
+    <Style x:Key="Aero7ToolbarButton" TargetType="Button">
+        <Setter Property="MinWidth"               Value="60"/>
+        <Setter Property="MinHeight"              Value="52"/>
+        <Setter Property="Cursor"                 Value="Hand"/>
+        <Setter Property="Stylus.IsFlicksEnabled" Value="False"/>
+        <Setter Property="Margin"                 Value="1,2"/>
+        <Setter Property="ToolTipService.InitialShowDelay" Value="600"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid>
+                        <Border x:Name="Outer" CornerRadius="6" BorderThickness="1">
+                            <Border.BorderBrush>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                    <GradientStop Color="#AA8EC7F8" Offset="0"/>
+                                    <GradientStop Color="#882B7CC5" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.BorderBrush>
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                    <GradientStop Color="#44D4EDFC" Offset="0"/>
+                                    <GradientStop Color="#226DB8F0" Offset="0.49"/>
+                                    <GradientStop Color="#1A3B8ED6" Offset="0.50"/>
+                                    <GradientStop Color="#225AABF0" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.Background>
+                        </Border>
+                        <Border x:Name="Gloss" CornerRadius="5,5,0,0"
+                                Margin="1,1,1,0" VerticalAlignment="Top" Height="14">
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                    <GradientStop Color="#66FFFFFF" Offset="0"/>
+                                    <GradientStop Color="#11FFFFFF" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.Background>
+                        </Border>
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center" Margin="4,4"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Outer" Property="Background">
+                                <Setter.Value>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                        <GradientStop Color="#88D4EDFC" Offset="0"/>
+                                        <GradientStop Color="#556DB8F0" Offset="0.49"/>
+                                        <GradientStop Color="#443B8ED6" Offset="0.50"/>
+                                        <GradientStop Color="#555AABF0" Offset="1"/>
+                                    </LinearGradientBrush>
+                                </Setter.Value>
+                            </Setter>
+                            <Setter TargetName="Outer" Property="BorderBrush">
+                                <Setter.Value>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                        <GradientStop Color="#EE8EC7F8" Offset="0"/>
+                                        <GradientStop Color="#CC2B7CC5" Offset="1"/>
+                                    </LinearGradientBrush>
+                                </Setter.Value>
+                            </Setter>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Outer" Property="Opacity" Value="0.68"/>
+                            <Setter TargetName="Gloss" Property="Opacity" Value="0.2"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Outer" Property="Opacity" Value="0.35"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ══ Aero7CaptionButton — TitleBar Min/Max ════════════════════════════ -->
+    <Style x:Key="Aero7CaptionButton" TargetType="Button">
+        <Setter Property="Width"                  Value="46"/>
+        <Setter Property="Height"                 Value="32"/>
+        <Setter Property="Cursor"                 Value="Hand"/>
+        <Setter Property="Stylus.IsFlicksEnabled" Value="False"/>
+        <Setter Property="Background"             Value="Transparent"/>
+        <Setter Property="BorderThickness"        Value="0"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid>
+                        <Border x:Name="Bd" CornerRadius="4" BorderThickness="0"
+                                Background="Transparent"/>
+                        <Border x:Name="Gloss" CornerRadius="3,3,0,0"
+                                Margin="1,1,1,0" VerticalAlignment="Top"
+                                Height="11" Opacity="0">
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                    <GradientStop Color="#77FFFFFF" Offset="0"/>
+                                    <GradientStop Color="#11FFFFFF" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.Background>
+                        </Border>
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background">
+                                <Setter.Value>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                        <GradientStop Color="#88D4EDFC" Offset="0"/>
+                                        <GradientStop Color="#663B8ED6" Offset="1"/>
+                                    </LinearGradientBrush>
+                                </Setter.Value>
+                            </Setter>
+                            <Setter TargetName="Bd" Property="BorderBrush"
+                                    Value="#558EC7F8"/>
+                            <Setter TargetName="Bd" Property="BorderThickness" Value="1"/>
+                            <Setter TargetName="Gloss" Property="Opacity" Value="1"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Bd" Property="Opacity" Value="0.6"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ══ Aero7CloseButton — красный hover ═════════════════════════════════ -->
+    <Style x:Key="Aero7CloseButton" TargetType="Button">
+        <Setter Property="Width"                  Value="46"/>
+        <Setter Property="Height"                 Value="32"/>
+        <Setter Property="Cursor"                 Value="Hand"/>
+        <Setter Property="Stylus.IsFlicksEnabled" Value="False"/>
+        <Setter Property="Background"             Value="Transparent"/>
+        <Setter Property="BorderThickness"        Value="0"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid>
+                        <Border x:Name="Bd" CornerRadius="4" Background="Transparent"/>
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background">
+                                <Setter.Value>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                        <GradientStop Color="#CCE87070" Offset="0"/>
+                                        <GradientStop Color="#AAC03030" Offset="1"/>
+                                    </LinearGradientBrush>
+                                </Setter.Value>
+                            </Setter>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Bd" Property="Opacity" Value="0.65"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ══ Aero7 ScrollBar (для SettingsWindow через x:Key="AeroScrollViewer") -->
+    <Style x:Key="Aero7ScrollThumb" TargetType="Thumb">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="IsTabStop"             Value="False"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Thumb">
+                    <Border x:Name="Bd" CornerRadius="5" BorderThickness="1"
+                            MinWidth="10" MinHeight="20">
+                        <Border.BorderBrush>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                <GradientStop Color="#FF8EC7F8" Offset="0"/>
+                                <GradientStop Color="#FF2B7CC5" Offset="1"/>
+                            </LinearGradientBrush>
+                        </Border.BorderBrush>
+                        <Border.Background>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                <GradientStop Color="#FFD4EDFC" Offset="0"/>
+                                <GradientStop Color="#FF3B8ED6" Offset="0.5"/>
+                                <GradientStop Color="#FF6DB8F0" Offset="1"/>
+                            </LinearGradientBrush>
+                        </Border.Background>
+                        <Border CornerRadius="4,4,0,0" Margin="1,1,1,0"
+                                VerticalAlignment="Top" Height="6">
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                    <GradientStop Color="#77FFFFFF" Offset="0"/>
+                                    <GradientStop Color="#11FFFFFF" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.Background>
+                        </Border>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Opacity" Value="0.82"/>
+                        </Trigger>
+                        <Trigger Property="IsDragging" Value="True">
+                            <Setter TargetName="Bd" Property="Opacity" Value="0.65"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="Aero7ArrowRepeat" TargetType="RepeatButton">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="Focusable"             Value="False"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RepeatButton">
+                    <Border x:Name="Bd" CornerRadius="3" BorderThickness="1"
+                            Height="18" Width="18" Cursor="Arrow">
+                        <Border.BorderBrush>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                <GradientStop Color="#FF8EC7F8" Offset="0"/>
+                                <GradientStop Color="#FF2B7CC5" Offset="1"/>
+                            </LinearGradientBrush>
+                        </Border.BorderBrush>
+                        <Border.Background>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                <GradientStop Color="#FFD4EDFC" Offset="0"/>
+                                <GradientStop Color="#FF6DB8F0" Offset="1"/>
+                            </LinearGradientBrush>
+                        </Border.Background>
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Opacity" Value="0.8"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Bd" Property="Opacity" Value="0.55"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="Aero7ScrollBar" TargetType="ScrollBar">
+        <Setter Property="OverridesDefaultStyle"  Value="True"/>
+        <Setter Property="Stylus.IsFlicksEnabled" Value="False"/>
+        <Setter Property="Width"                  Value="14"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ScrollBar">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="18"/>
+                            <RowDefinition/>
+                            <RowDefinition Height="18"/>
+                        </Grid.RowDefinitions>
+                        <Border Grid.RowSpan="3" CornerRadius="6" BorderThickness="1"
+                                BorderBrush="#AA8EC7F8">
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                    <GradientStop Color="#33D4EDFC" Offset="0"/>
+                                    <GradientStop Color="#22B8D4EC" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.Background>
+                        </Border>
+                        <RepeatButton Grid.Row="0"
+                            Command="ScrollBar.LineUpCommand"
+                            Style="{StaticResource Aero7ArrowRepeat}">
+                            <TextBlock Text="▲" FontSize="7" Foreground="#FF2B7CC5"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"/>
+                        </RepeatButton>
+                        <Track Grid.Row="1" Name="PART_Track"
+                               IsDirectionReversed="True">
+                            <Track.Thumb>
+                                <Thumb Style="{StaticResource Aero7ScrollThumb}"/>
+                            </Track.Thumb>
+                            <Track.IncreaseRepeatButton>
+                                <RepeatButton Command="ScrollBar.PageDownCommand"
+                                              Opacity="0" Focusable="False"/>
+                            </Track.IncreaseRepeatButton>
+                            <Track.DecreaseRepeatButton>
+                                <RepeatButton Command="ScrollBar.PageUpCommand"
+                                              Opacity="0" Focusable="False"/>
+                            </Track.DecreaseRepeatButton>
+                        </Track>
+                        <RepeatButton Grid.Row="2"
+                            Command="ScrollBar.LineDownCommand"
+                            Style="{StaticResource Aero7ArrowRepeat}">
+                            <TextBlock Text="▼" FontSize="7" Foreground="#FF2B7CC5"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"/>
+                        </RepeatButton>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+</ResourceDictionary>
