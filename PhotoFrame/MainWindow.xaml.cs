@@ -1,31 +1,26 @@
-// MainWindow.xaml.cs — v4.0 (build 43)
+// MainWindow.xaml.cs — v3.6 (build 38)
 //
-// UI MODE SWITCHING (ghost-activation):
-//   Modern  → ToolbarButton style + Segoe MDL2 Assets glyphs.
-//   Aero7   → Aero7ToolbarButton style + PNG icons from Resources/Icons/
-//             + Aero7CaptionButton on title bar Min/Max/Close.
-//   Switch is instant, no restart required. Triggered from Внешний вид → UiMode combobox.
-//
-// ADAPTIVE DECODE WIDTH:
-//   x64: screen width (no cap).  x86/≤2GB: 1920px cap.
+// TOUCH ARCHITECTURE:
+//   • Кнопки тулбара — стандартный Click (работает и мышью, и тачем).
+//   • Stylus.IsFlicksEnabled=False на каждой кнопке — без системных жестов.
+//   • SwipeZone (Rectangle над фото) — ManipulationStarting/Delta для свайпов.
+//   • Window НЕ имеет IsManipulationEnabled — не крадёт touch у кнопок.
 //
 // TRANSPARENCY:
 //   AllowsTransparency=True + WindowStyle=None + Background=Transparent.
-//   DWM Mica (Win11) / Acrylic (Win10) via WindowHelper.
+//   DWM Acrylic (Win10) / Mica (Win11) применяется через WindowHelper.
 //
-// SCREENSAVER: auto-starts slideshow in /S mode regardless of AutoStart setting.
-// AUTOSTART: reconciles HKCU\Run vs saved setting on each launch.
-// SCAN: CancellationToken cancels stale scan before reload.
+// FULLSCREEN:
+//   WindowStyle остаётся None всегда (AllowsTransparency требует этого).
+//   Fullscreen = WindowState.Maximized + TitleBar скрыт.
 
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Management;
 using System.Reflection;
-using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
@@ -46,41 +41,21 @@ namespace PhotoFrame
         private ScanResult?       _lastScan;
         private bool              _playing    = false;
         private bool              _fullscreen = false;
-        private bool              _pendingScreensaverAutoStart = false;
+        private string            _effect    = "none";
 
-        private CancellationTokenSource _scanCts = new();
-
-        private readonly DispatcherTimer _slideTimer   = new();
-        private readonly DispatcherTimer _hideTimer    = new()
+        private readonly DispatcherTimer _slideTimer  = new();
+        private readonly DispatcherTimer _hideTimer   = new()
             { Interval = TimeSpan.FromSeconds(3) };
         private readonly DispatcherTimer _counterTimer = new()
             { Interval = TimeSpan.FromSeconds(4) };
-        private readonly DispatcherTimer _tileTimer    = new();
         private bool _toolbarVisible = true;
 
         private System.Windows.Forms.NotifyIcon? _tray;
         private ManagementEventWatcher?           _driveWatcher;
         private PhotoInfo? _contextPhoto;
+
         private List<DiskError> _diskErrors      = new();
         private int             _currentErrorIdx = 0;
-
-        // Adaptive decode width: x64 = screen width, x86 = capped
-        private int _decodeWidth = ComputeDecodeWidth();
-
-        private static int ComputeDecodeWidth()
-        {
-            if (IntPtr.Size == 8)
-            {
-                try { return Math.Max(1920, (int)SystemParameters.PrimaryScreenWidth); }
-                catch { return 3840; }
-            }
-            try
-            {
-                long mb = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes / (1024 * 1024);
-                return mb <= 2048 ? 1920 : 2560;
-            }
-            catch { return 1920; }
-        }
 
         public MainWindow()
         {
@@ -88,7 +63,6 @@ namespace PhotoFrame
             _slideTimer.Tick   += async (_, __) => await AdvanceAsync();
             _hideTimer.Tick    += (_, __) => TryHideToolbar();
             _counterTimer.Tick += (_, __) => HideCounter();
-            _tileTimer.Tick    += (_, __) => OnTileCycle();
         }
 
         // ═══ LOADED ══════════════════════════════════════════════════════════════
@@ -101,26 +75,21 @@ namespace PhotoFrame
                 _engine = new TransitionEngine(ImgA, ImgB, RootGrid);
                 _cfg    = SettingsService.Load();
 
-                var ver = Assembly.GetExecutingAssembly().GetName().Version;
-                TbTitleVersion.Text = ver != null
-                    ? $"PhotoFrame  v{ver.Major}.{ver.Minor}.{ver.Build}.{ver.Revision}"
-                    : "PhotoFrame";
-                Title = TbTitleVersion.Text;
+                // Window/app name only — no version number in UI (per user request)
+                TbTitleVersion.Text = "PhotoFrame";
+                Title = "PhotoFrame";
 
+                // Apply UI mode (Modern/Aero7) — loads AeroTheme.xaml on demand
+                App.ApplyUiMode(_cfg.UiMode);
+                ApplyUiModeStyles();
+
+                // Apply DWM backdrop BEFORE showing content
                 RefreshDwmTheme();
+                App.ThemeChanged += OnThemeChanged;
+
                 ApplyBackdrop();
-                App.ThemeChanged  += OnThemeChanged;
-                App.UiModeChanged += OnUiModeChanged;
 
                 SystemIntegration.PreventSleep(_cfg.PreventSleep);
-
-                // Reconcile autostart
-                bool actualAutostart = SystemIntegration.IsAutostartEnabled();
-                if (_cfg.AutostartEnabled && !actualAutostart)
-                    SystemIntegration.SetAutostart(true);
-                else if (!_cfg.AutostartEnabled && actualAutostart)
-                    _cfg.AutostartEnabled = false;
-
                 BuildTray();
                 StartRemovableWatcher();
 
@@ -128,22 +97,23 @@ namespace PhotoFrame
                 {
                     EnterFullscreen();
                     _hideTimer.Start();
-                    if (_cfg.SelectedPaths.Count > 0)
-                        _pendingScreensaverAutoStart = true;
                 }
 
-                // Apply UI mode (toolbar icon style + caption buttons)
-                ApplyUiModeStyles(_cfg.UiMode);
+                // Apply Aero7 icons if mode set
+                ApplyToolbarIcons();
+
                 SyncPlayIcon();
                 SyncThemeIcon();
                 SyncPlayModeIcon();
                 SyncIntervalLabel();
-                RestartTileTimer();
 
                 if (_cfg.SelectedPaths.Count > 0)
                     await ReloadPhotosAsync();
                 else
                     ShowEmpty();
+
+                // Re-apply icons now that playlist state (Count/CurrentIndex) is known
+                ApplyToolbarIcons();
             }
             catch (Exception ex)
             {
@@ -152,94 +122,16 @@ namespace PhotoFrame
             }
         }
 
-        // ═══ UI MODE — STYLE SWITCHING ════════════════════════════════════════
-        //
-        // ApplyUiModeStyles() swaps:
-        //   1. Style on every toolbar Button (ToolbarButton ↔ Aero7ToolbarButton)
-        //   2. Icon content: Segoe MDL2 glyph ↔ PNG Image via IconHelper
-        //   3. Caption buttons style (transparent ↔ Aero7CaptionButton)
-        //   4. Close button special style (Aero7CloseButton)
-
-        private void ApplyUiModeStyles(UiMode mode)
-        {
-            bool aero = mode == UiMode.Aero7;
-
-            Style toolbarBtnStyle = (TryFindResource(aero
-                ? "Aero7ToolbarButton"
-                : "ToolbarButton") as Style)!;
-
-            // Toolbar buttons
-            Button[] toolbarBtns = {
-                BtnPlayMode, BtnIntervalDown, BtnIntervalUp,
-                BtnPrev, BtnPlayPause, BtnNext,
-                BtnTheme, BtnSettings, BtnFullscreen
-            };
-            foreach (var btn in toolbarBtns)
-            {
-                if (btn == null) continue;
-                btn.Style = toolbarBtnStyle;
-            }
-
-            // Icons inside toolbar buttons
-            if (aero)
-            {
-                IconHelper.SwapIcon(BtnPrev,      IconRole.Start,   20);
-                IconHelper.SwapIcon(BtnNext,      IconRole.End,     20);
-                IconHelper.SwapIcon(BtnSettings,  IconRole.Settings, 20);
-                // Play/Pause synced separately
-                SyncPlayIconAero();
-            }
-            else
-            {
-                IconHelper.RestoreMdl2(BtnPrev,     "\uE892", 20);
-                IconHelper.RestoreMdl2(BtnNext,     "\uE893", 20);
-                IconHelper.RestoreMdl2(BtnSettings, "\uE713", 20);
-                // Restore glyph for play
-                if (TbPlayIcon != null) TbPlayIcon.Visibility = Visibility.Visible;
-            }
-
-            // Caption buttons
-            if (BtnWinMin != null && BtnWinMax != null && BtnWinClose != null)
-            {
-                if (aero)
-                {
-                    var capStyle   = TryFindResource("Aero7CaptionButton")  as Style;
-                    var closeStyle = TryFindResource("Aero7CloseButton")    as Style;
-                    BtnWinMin.Style   = capStyle;
-                    BtnWinMax.Style   = capStyle;
-                    BtnWinClose.Style = closeStyle ?? capStyle;
-                }
-                else
-                {
-                    // Restore default transparent caption style
-                    BtnWinMin.ClearValue(StyleProperty);
-                    BtnWinMax.ClearValue(StyleProperty);
-                    BtnWinClose.ClearValue(StyleProperty);
-                }
-            }
-
-            // Toolbar background: Aero uses AeroTheme's ToolbarBgBrush override
-            // (already merged in App.xaml.cs — DynamicResource picks it up automatically)
-        }
-
-        private void OnUiModeChanged(UiMode mode)
-        {
-            _cfg.UiMode = mode;
-            ApplyUiModeStyles(mode);
-            SyncPlayIcon();
-        }
-
-        // ═══ BACKDROP ════════════════════════════════════════════════════════════
-
         private void ApplyBackdrop()
         {
             if (_cfg.EnableMicaEffect)
             {
-                WindowHelper.TryApplyBackdrop(this, App.CurrentTheme == AppTheme.Dark);
+                _effect = WindowHelper.TryApplyBackdrop(this,
+                    App.CurrentTheme == AppTheme.Dark);
             }
             else
             {
-                WindowHelper.RemoveBackdrop(this);
+                // No DWM effect — semi-transparent solid fallback
                 bool dark = App.CurrentTheme == AppTheme.Dark;
                 Background = new SolidColorBrush(dark
                     ? Color.FromArgb(0xCC, 0x11, 0x11, 0x11)
@@ -247,59 +139,33 @@ namespace PhotoFrame
             }
         }
 
-        // ═══ TILE TIMER ══════════════════════════════════════════════════════════
-
-        private void RestartTileTimer()
-        {
-            _tileTimer.Stop();
-            if (!_cfg.LiveTilesEnabled) return;
-            int sec = _cfg.LiveTileCycleIntervalSeconds > 0
-                ? _cfg.LiveTileCycleIntervalSeconds
-                : _cfg.SlideshowIntervalSeconds;
-            _tileTimer.Interval = TimeSpan.FromSeconds(Math.Max(5, sec));
-            _tileTimer.Start();
-        }
-
-        private void OnTileCycle()
-        {
-            if (_cfg.LiveTilesEnabled)
-                LiveTileService.CycleTile(_cfg.LiveTilesLargeEnabled);
-        }
-
         // ═══ PHOTOS ══════════════════════════════════════════════════════════════
 
         private async Task ReloadPhotosAsync()
         {
-            await _scanCts.CancelAsync();
-            _scanCts.Dispose();
-            _scanCts = new CancellationTokenSource();
-            var ct = _scanCts.Token;
-
             ScanPanel.Visibility       = Visibility.Visible;
             EmptyPanel.Visibility      = Visibility.Collapsed;
             DiskErrorBanner.Visibility = Visibility.Collapsed;
             ContextPopup.IsOpen        = false;
 
-            try
-            {
-                _lastScan = await FileScanner.ScanAsync(
-                    _cfg.SelectedPaths, _cfg.IncludeSubdirectories,
-                    p => Dispatcher.InvokeAsync(() => TbScanPath.Text = p),
-                    ct);
-            }
-            catch (OperationCanceledException) { return; }
+            _lastScan = await FileScanner.ScanAsync(
+                _cfg.SelectedPaths, _cfg.IncludeSubdirectories,
+                p => Dispatcher.InvokeAsync(() => TbScanPath.Text = p));
 
             ScanPanel.Visibility = Visibility.Collapsed;
 
             if (_lastScan.DiskErrors.Count > 0)
-            { _diskErrors = _lastScan.DiskErrors; _currentErrorIdx = 0; ShowDiskError(_diskErrors[0]); }
+            {
+                _diskErrors      = _lastScan.DiskErrors;
+                _currentErrorIdx = 0;
+                ShowDiskError(_diskErrors[0]);
+            }
 
             if (_lastScan.Photos.Count == 0) { ShowEmpty(); return; }
 
             _playlist.SetPhotos(_lastScan.Photos, _cfg.PlayMode);
             await ShowCurrentAsync(animate: false);
-            if (_cfg.AutoStart || _pendingScreensaverAutoStart)
-            { _pendingScreensaverAutoStart = false; StartSlide(); }
+            if (_cfg.AutoStart) StartSlide();
         }
 
         private async Task ShowCurrentAsync(bool animate)
@@ -325,18 +191,13 @@ namespace PhotoFrame
             else
                 _engine?.ShowImmediate(bmp);
 
-            if (_cfg.LiveTilesEnabled)
-            {
-                LiveTileService.EnqueuePhoto(photo.FilePath);
-                if (!_tileTimer.IsEnabled)
-                    LiveTileService.UpdateTile(photo.FilePath, _cfg.LiveTilesLargeEnabled);
-            }
+            if (_cfg.LiveTilesEnabled) LiveTileService.UpdateTile(photo.FilePath);
 
             SyncCounter();
             ContextPopup.IsOpen = false;
         }
 
-        private BitmapImage? LoadBitmapSafe(string path)
+        private static BitmapImage? LoadBitmapSafe(string path)
         {
             try
             {
@@ -346,24 +207,9 @@ namespace PhotoFrame
                 b.UriSource        = new Uri(path, UriKind.Absolute);
                 b.CacheOption      = BitmapCacheOption.OnLoad;
                 b.CreateOptions    = BitmapCreateOptions.IgnoreColorProfile;
-                b.DecodePixelWidth = _decodeWidth;
+                b.DecodePixelWidth = 2560;
                 b.EndInit(); b.Freeze();
                 return b;
-            }
-            catch (OutOfMemoryException)
-            {
-                try
-                {
-                    var b2 = new BitmapImage();
-                    b2.BeginInit();
-                    b2.UriSource        = new Uri(path, UriKind.Absolute);
-                    b2.CacheOption      = BitmapCacheOption.OnLoad;
-                    b2.CreateOptions    = BitmapCreateOptions.IgnoreColorProfile;
-                    b2.DecodePixelWidth = Math.Max(480, _decodeWidth / 2);
-                    b2.EndInit(); b2.Freeze();
-                    return b2;
-                }
-                catch { return null; }
             }
             catch { return null; }
         }
@@ -372,14 +218,17 @@ namespace PhotoFrame
         {
             if (_cfg.CounterDisplayFormat == CounterFormat.Hidden)
             { TbCounter.Text = ""; CounterBadge.Visibility = Visibility.Collapsed; return; }
+
             CounterBadge.Visibility = Visibility.Visible;
             int photos = _lastScan?.Photos.Count ?? _playlist.Count;
             TbCounter.Text = _cfg.CounterDisplayFormat == CounterFormat.WithTotal
-                && (_lastScan?.TotalFilesScanned ?? 0) > photos
+                && _lastScan?.TotalFilesScanned > photos
                 ? $"{_playlist.CurrentIndex+1} / {photos}  [{_lastScan!.TotalFilesScanned} файлов]"
                 : $"{_playlist.CurrentIndex+1} / {photos}";
+
             CounterBadge.Opacity = 1;
-            _counterTimer.Stop(); _counterTimer.Start();
+            _counterTimer.Stop();
+            _counterTimer.Start();
         }
 
         private void HideCounter()
@@ -396,6 +245,7 @@ namespace PhotoFrame
             if (_engine?.IsTransitioning == true) return;
             _playlist.Next(_cfg.PlayMode, _cfg.LoopSlideshow);
             await ShowCurrentAsync(animate: true);
+            ApplyToolbarIcons(); // refresh Start/End-unavailable (Aero7)
         }
 
         private async Task GoBackAsync()
@@ -403,6 +253,7 @@ namespace PhotoFrame
             if (_engine?.IsTransitioning == true) return;
             _playlist.Prev(_cfg.LoopSlideshow);
             await ShowCurrentAsync(animate: true);
+            ApplyToolbarIcons(); // refresh Start/End-unavailable (Aero7)
         }
 
         // ═══ SLIDESHOW ═══════════════════════════════════════════════════════════
@@ -440,7 +291,7 @@ namespace PhotoFrame
             ToolbarSlide.BeginAnimation(TranslateTransform.YProperty, a);
         }
 
-        // ═══ FULLSCREEN ══════════════════════════════════════════════════════════
+        // ═══ FULLSCREEN (WindowStyle stays None always) ══════════════════════════
 
         private void EnterFullscreen()
         {
@@ -472,47 +323,173 @@ namespace PhotoFrame
 
         private void OnThemeChanged(AppTheme t)
         {
-            RefreshDwmTheme(); SyncThemeIcon(); ApplyBackdrop();
+            RefreshDwmTheme();
+            SyncThemeIcon();
+            ApplyBackdrop();
         }
 
         private void RefreshDwmTheme()
             => WindowHelper.SetTitleBarDarkMode(this, App.CurrentTheme == AppTheme.Dark);
 
         // ═══ ICON SYNC ═══════════════════════════════════════════════════════════
+        //
+        // Modern mode : Segoe MDL2 glyphs only (IconHelper.RestoreMdl2).
+        // Aero7 mode  : state-aware PNG icons via IconHelper.SwapAeroStateIcon —
+        //               hover/pressed PNG variants activate automatically through
+        //               DataTriggers bound to the ancestor Button (no extra
+        //               event handlers needed). Disabled/Unavailable variants
+        //               are applied explicitly when the action is not possible.
 
-        private void SyncPlayIcon()
+        /// <summary>
+        /// Applies Aero7 PNG icons (with hover/pressed states) to the toolbar's
+        /// navigation buttons, or restores Segoe MDL2 glyphs for Modern mode.
+        /// Called on load, after UiMode change, and whenever playback/navigation
+        /// state changes (so disabled/unavailable states stay in sync).
+        /// </summary>
+        private void ApplyToolbarIcons()
         {
-            if (_cfg.UiMode == UiMode.Aero7) { SyncPlayIconAero(); return; }
-            if (TbPlayIcon  != null) { TbPlayIcon.Text  = _playing ? "\uE769" : "\uE768"; TbPlayIcon.Visibility = Visibility.Visible; }
-            if (TbPlayLabel != null)   TbPlayLabel.Text = _playing ? "Пауза"  : "Пуск";
+            if (_cfg.UiMode == UiMode.Aero7)
+            {
+                bool atStart = _playlist.CurrentIndex <= 0 && !_cfg.LoopSlideshow;
+                bool atEnd   = _playlist.CurrentIndex >= _playlist.Count - 1
+                               && !_cfg.LoopSlideshow;
+                bool noPhotos = _playlist.Count == 0;
+
+                // BtnPrev → Start* icon set (with Unavailable when at first photo)
+                if (noPhotos || atStart)
+                    IconHelper.SwapIcon(BtnPrev, IconRole.StartUnavailable, 20);
+                else
+                    IconHelper.SwapAeroStateIcon(BtnPrev,
+                        IconRole.Start, IconRole.StartHover, IconRole.StartClicked, 20);
+
+                // BtnNext → End* icon set (with Unavailable when at last photo)
+                if (noPhotos || atEnd)
+                    IconHelper.SwapIcon(BtnNext, IconRole.EndUnavailable, 20);
+                else
+                    IconHelper.SwapAeroStateIcon(BtnNext,
+                        IconRole.End, IconRole.EndHover, IconRole.EndClicked, 20);
+
+                // BtnPlayPause handled by SyncPlayIcon() (depends on _playing)
+                SyncPlayIcon();
+            }
+            else
+            {
+                IconHelper.RestoreMdl2(BtnPrev, "\uE892", 20);
+                IconHelper.RestoreMdl2(BtnNext, "\uE893", 20);
+                IconHelper.RestoreMdl2(BtnPlayPause,
+                    _playing ? "\uE769" : "\uE768", 24);
+            }
         }
 
-        private void SyncPlayIconAero()
+        /// <summary>
+        /// Applies Aero7CaptionButton/Aero7CloseButton styles to the custom
+        /// TitleBar buttons, and Aero7ToolbarButton to the bottom toolbar
+        /// buttons, when UiMode.Aero7 is active. In Modern mode the styles
+        /// fall back to the ones defined in CommonStyles.xaml (DynamicResource).
+        /// </summary>
+        private void ApplyUiModeStyles()
         {
-            IconHelper.SwapIcon(BtnPlayPause,
-                _playing ? IconRole.Pause : IconRole.Play, 22);
-            if (TbPlayLabel != null) TbPlayLabel.Text = _playing ? "Пауза" : "Пуск";
-            // Hide underlying TextBlock (replaced by Image)
-            if (TbPlayIcon != null) TbPlayIcon.Visibility = Visibility.Collapsed;
+            bool aero = _cfg.UiMode == UiMode.Aero7;
+
+            // ── TitleBar caption buttons ──────────────────────────────────────
+            // XAML defines NO explicit Style for these (default WPF chrome +
+            // inline Background=Transparent). In Aero7 we apply the glass
+            // caption styles; switching back to Modern clears the override so
+            // the original default chrome returns.
+            if (aero)
+            {
+                var cap   = TryFindResource("Aero7CaptionButton") as Style;
+                var close = TryFindResource("Aero7CloseButton")   as Style;
+                if (cap   != null) { BtnWinMinimize.Style = cap; BtnWinMaximize.Style = cap; }
+                if (close != null) BtnWinClose.Style = close;
+            }
+            else
+            {
+                BtnWinMinimize.ClearValue(StyleProperty);
+                BtnWinMaximize.ClearValue(StyleProperty);
+                BtnWinClose.ClearValue(StyleProperty);
+            }
+
+            // ── Bottom toolbar buttons ─────────────────────────────────────────
+            // XAML sets Style="{DynamicResource ToolbarButton}". In Aero7 we
+            // override with the glass Aero7ToolbarButton; switching back to
+            // Modern restores the original DynamicResource binding via
+            // SetResourceReference (so theme changes keep working too).
+            var toolbarBtns = new[]
+            {
+                BtnPlayMode, BtnIntervalDown, BtnIntervalUp,
+                BtnPrev, BtnPlayPause, BtnNext,
+                BtnTheme, BtnSettings, BtnFullscreen
+            };
+
+            if (aero)
+            {
+                var aeroStyle = TryFindResource("Aero7ToolbarButton") as Style;
+                if (aeroStyle != null)
+                    foreach (var btn in toolbarBtns) btn.Style = aeroStyle;
+            }
+            else
+            {
+                foreach (var btn in toolbarBtns)
+                    btn.SetResourceReference(StyleProperty, "ToolbarButton");
+            }
+        }
+
+        /// <summary>
+        /// Updates the central Play/Pause(Stop) button icon and label based on
+        /// <see cref="_playing"/>. In Aero7 mode this swaps between the Play*
+        /// and Stop* PNG state-sets (hover/pressed react automatically via
+        /// DataTriggers); a PlayDisabled icon is shown when the playlist is empty.
+        /// In Modern mode only the Segoe MDL2 glyph/label change.
+        /// </summary>
+        private void SyncPlayIcon()
+        {
+            if (_cfg.UiMode == UiMode.Aero7)
+            {
+                if (_playlist.Count == 0)
+                {
+                    IconHelper.SwapIcon(BtnPlayPause, IconRole.PlayDisabled, 26);
+                }
+                else if (_playing)
+                {
+                    // "Playing" → button now represents STOP
+                    IconHelper.SwapAeroStateIcon(BtnPlayPause,
+                        IconRole.Stop, IconRole.StopHover, IconRole.StopClicked, 26);
+                }
+                else
+                {
+                    IconHelper.SwapAeroStateIcon(BtnPlayPause,
+                        IconRole.Play, IconRole.PlayHover, IconRole.PlayClicked, 26);
+                }
+            }
+            else
+            {
+                // Use RestoreMdl2 (not TbPlayIcon.Text) so this stays correct
+                // even after the icon element was previously swapped by Aero7.
+                IconHelper.RestoreMdl2(BtnPlayPause,
+                    _playing ? "\uE769" : "\uE768", 26);
+            }
+
+            TbPlayLabel.Text = _playing ? "Пауза" : "Пуск";
         }
 
         private void SyncThemeIcon()
         {
             bool dark = App.CurrentTheme == AppTheme.Dark;
-            if (TbThemeIcon != null) TbThemeIcon.Text = dark ? "\uE708" : "\uE706";
+            TbThemeIcon.Text = dark ? "\uE708" : "\uE706";
         }
 
         private void SyncPlayModeIcon()
         {
             bool shuffle = _cfg.PlayMode != PlayMode.Sequential;
-            if (TbPlayModeIcon  != null) TbPlayModeIcon.Text  = shuffle ? "\uE8B1" : "\uE8AC";
-            if (TbPlayModeLabel != null) TbPlayModeLabel.Text = shuffle ? "Случайно" : "По порядку";
+            TbPlayModeIcon.Text  = shuffle ? "\uE8B1" : "\uE8AC";
+            TbPlayModeLabel.Text = shuffle ? "Случайно" : "По порядку";
         }
 
         private void SyncIntervalLabel()
         {
             int s = _cfg.SlideshowIntervalSeconds;
-            if (TbInterval != null) TbInterval.Text = s >= 60 ? $"{s/60}м{s%60:D2}с" : $"{s}с";
+            TbInterval.Text = s >= 60 ? $"{s/60}м{s%60:D2}с" : $"{s}с";
         }
 
         // ═══ OVERLAYS ════════════════════════════════════════════════════════════
@@ -524,7 +501,8 @@ namespace PhotoFrame
             SetOverlay(OverlayDate, TbDate, _cfg.ShowDateOverlay,       photo.DateString,     _cfg.OverlayFontSize);
         }
 
-        private static void SetOverlay(Border b, TextBlock tb, bool show, string? text, double fs)
+        private static void SetOverlay(System.Windows.Controls.Border b,
+            System.Windows.Controls.TextBlock tb, bool show, string? text, double fs)
         {
             tb.Text = text ?? ""; tb.FontSize = fs;
             b.Visibility = show && !string.IsNullOrEmpty(text)
@@ -545,7 +523,7 @@ namespace PhotoFrame
             string cnt = _diskErrors.Count > 1 ? $" ({_currentErrorIdx+1}/{_diskErrors.Count})" : "";
             TbDiskErrorMsg.Text =
                 $"⚠ Проблема{cnt}: {err.Path}\n{err.Message}" +
-                (err.Kind == ErrorKind.IoError ? "\nДиск повреждён." : "");
+                (err.Kind == ErrorKind.IoError ? "\nДиск повреждён. Файлы пропущены." : "");
             BtnChkdsk.Visibility = err.Kind == ErrorKind.IoError && err.Volume != null
                 ? Visibility.Visible : Visibility.Collapsed;
             BtnChkdsk.Tag              = err.Volume;
@@ -556,7 +534,7 @@ namespace PhotoFrame
         {
             string? vol = (BtnChkdsk.Tag as string)?.TrimEnd('\\');
             if (string.IsNullOrEmpty(vol)) return;
-            if (MessageBox.Show($"Запустить chkdsk {vol} /r?\n\n⚠ Потребуется перезагрузка.",
+            if (MessageBox.Show($"Запустить chkdsk {vol} /r ?\n\n⚠ Потребуется перезагрузка.",
                 "Проверка диска", MessageBoxButton.YesNo, MessageBoxImage.Warning)
                 != MessageBoxResult.Yes) return;
             try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
@@ -632,6 +610,7 @@ namespace PhotoFrame
                         : System.Drawing.SystemIcons.Application;
                 }
                 catch { _tray.Icon = System.Drawing.SystemIcons.Application; }
+
                 var menu = new System.Windows.Forms.ContextMenuStrip();
                 menu.Items.Add("Показать",    null, (_,__) => ShowFromTray());
                 menu.Items.Add("Следующее",   null, (_,__) => _ = AdvanceAsync());
@@ -672,16 +651,18 @@ namespace PhotoFrame
                     var removable = await FileScanner.GetRemovableWithPhotosAsync();
                     if (removable.Count == 0) return;
                     string drives = string.Join(", ", removable.ConvertAll(d => d.Name));
-                    if (_cfg.SuggestRemovableMedia &&
-                        MessageBox.Show($"Фото на носителе: {drives}\nДобавить?",
+                    if (_cfg.SuggestRemovableMedia)
+                    {
+                        if (MessageBox.Show($"Фото на носителе: {drives}\nДобавить?",
                             "PhotoFrame", MessageBoxButton.YesNo, MessageBoxImage.Question)
                             == MessageBoxResult.Yes)
-                    {
-                        foreach (var d in removable)
-                            if (!_cfg.SelectedPaths.Contains(d.RootDirectory.FullName))
-                                _cfg.SelectedPaths.Add(d.RootDirectory.FullName);
-                        SettingsService.Save(_cfg);
-                        await ReloadPhotosAsync();
+                        {
+                            foreach (var d in removable)
+                                if (!_cfg.SelectedPaths.Contains(d.RootDirectory.FullName))
+                                    _cfg.SelectedPaths.Add(d.RootDirectory.FullName);
+                            SettingsService.Save(_cfg);
+                            await ReloadPhotosAsync();
+                        }
                     }
                 }
                 catch { }
@@ -702,14 +683,15 @@ namespace PhotoFrame
                     _cfg = dlg.Result;
                     SettingsService.Save(_cfg);
                     App.ChangeTheme(_cfg.Theme);
-                    App.ChangeUiMode(_cfg.UiMode);   // triggers OnUiModeChanged → ApplyUiModeStyles
+                    App.ApplyUiMode(_cfg.UiMode);
+                    ApplyUiModeStyles();
                     ApplyBackdrop();
                     SystemIntegration.PreventSleep(_cfg.PreventSleep);
                     _slideTimer.Interval =
                         TimeSpan.FromSeconds(Math.Max(1, _cfg.SlideshowIntervalSeconds));
                     SyncIntervalLabel(); SyncPlayModeIcon();
+                    ApplyToolbarIcons();
                     if (!_cfg.LiveTilesEnabled) LiveTileService.ClearTile();
-                    RestartTileTimer();
                     _driveWatcher?.Stop(); _driveWatcher?.Dispose(); _driveWatcher=null;
                     StartRemovableWatcher();
                     _ = ReloadPhotosAsync();
@@ -723,10 +705,10 @@ namespace PhotoFrame
             }
         }
 
-        // ═══ BUTTON HANDLERS ═════════════════════════════════════════════════════
+        // ═══ BUTTON HANDLERS (work for both mouse and touch via Click) ════════════
 
-        private async void OnBtnPrev(object s, RoutedEventArgs e)     => await GoBackAsync();
-        private async void OnBtnNext(object s, RoutedEventArgs e)     => await AdvanceAsync();
+        private async void OnBtnPrev(object s, RoutedEventArgs e)      => await GoBackAsync();
+        private async void OnBtnNext(object s, RoutedEventArgs e)      => await AdvanceAsync();
         private void       OnBtnPlayPause(object s, RoutedEventArgs e)
             { if (_playing) StopSlide(); else StartSlide(); }
         private void       OnBtnSettings(object s, RoutedEventArgs e)
@@ -762,7 +744,7 @@ namespace PhotoFrame
             SyncIntervalLabel();
         }
 
-        // ═══ CAPTION BUTTONS ═════════════════════════════════════════════════════
+        // ═══ TITLE BAR (custom — WindowStyle=None) ═══════════════════════════════
 
         private void OnTitleBarDrag(object s, MouseButtonEventArgs e)
         {
@@ -795,7 +777,7 @@ namespace PhotoFrame
                 case Key.Right: case Key.Down:  case Key.PageDown: _ = AdvanceAsync(); break;
                 case Key.Left:  case Key.Up:    case Key.PageUp:   _ = GoBackAsync();  break;
                 case Key.Space: if (_playing) StopSlide(); else StartSlide();           break;
-                case Key.F: case Key.F11:
+                case Key.F:     case Key.F11:
                     if (_fullscreen) ExitFullscreen(); else EnterFullscreen(); break;
                 case Key.Escape:
                     if (ContextPopup.IsOpen) { ContextPopup.IsOpen=false; break; }
@@ -811,14 +793,18 @@ namespace PhotoFrame
         private void OnMouseLeave(object s, MouseEventArgs e)
             { if (_fullscreen) _hideTimer.Start(); }
 
+        // Mouse clicks on photo area (SwipeZone)
         private void OnPhotoAreaMouseDown(object s, MouseButtonEventArgs e)
         {
             if (App.StartMode==AppStartMode.Screensaver) { Close(); return; }
             if (e.ChangedButton==MouseButton.Right) return;
             if (ContextPopup.IsOpen) { ContextPopup.IsOpen=false; return; }
+
             ShowToolbarNow();
+
             if (e.ClickCount==2 && e.ChangedButton==MouseButton.Left)
             { if (_fullscreen) ExitFullscreen(); else EnterFullscreen(); return; }
+
             if (e.ChangedButton==MouseButton.Left)
             {
                 double x = e.GetPosition(RootGrid).X;
@@ -827,11 +813,15 @@ namespace PhotoFrame
             }
         }
 
-        // ═══ TOUCH — SwipeZone ═══════════════════════════════════════════════════
+        // ═══ TOUCH — SwipeZone ManipulationStarting / ManipulationDelta ══════════
+        // Кнопки тулбара получают обычный Click от touch — не перехватываем.
+        // SwipeZone лежит ПОД тулбаром (Z-order) и ловит только свайпы по фото.
 
         private void OnManipulationStarting(object sender, ManipulationStartingEventArgs e)
         {
             e.ManipulationContainer = this;
+            // ManipulationModes: WPF does NOT have TranslateInertia here.
+            // Inertia is enabled via ManipulationInertiaStarting event.
             e.Mode = ManipulationModes.TranslateX | ManipulationModes.TranslateY;
             e.Handled = true;
         }
@@ -839,24 +829,31 @@ namespace PhotoFrame
         private void OnManipulationInertiaStarting(object sender,
             ManipulationInertiaStartingEventArgs e)
         {
+            // Enable deceleration so swipe coasts naturally
             e.TranslationBehavior = new InertiaTranslationBehavior
-            { DesiredDeceleration = 10.0 * 96.0 / (1000.0 * 1000.0) };
+            {
+                DesiredDeceleration = 10.0 * 96.0 / (1000.0 * 1000.0)
+            };
             e.Handled = true;
         }
 
         private void OnManipulationDelta(object sender, ManipulationDeltaEventArgs e)
         {
             ShowToolbarNow();
+
             if (!e.IsInertial) { e.Handled = true; return; }
+
             double vx = e.Velocities.LinearVelocity.X;
             double vy = e.Velocities.LinearVelocity.Y;
-            if (Math.Abs(vx) > Math.Abs(vy)*1.5)
+
+            if (Math.Abs(vx) > Math.Abs(vy) * 1.5)
             {
                 if (vx < -80) { e.Complete(); _ = AdvanceAsync(); return; }
                 if (vx >  80) { e.Complete(); _ = GoBackAsync();  return; }
             }
             else if (vy < -150 && Math.Abs(vy) > Math.Abs(vx)*1.5)
             { e.Complete(); OpenSettings(); return; }
+
             e.Handled = true;
         }
 
@@ -872,10 +869,8 @@ namespace PhotoFrame
 
         private void OnClosing(object s, System.ComponentModel.CancelEventArgs e)
         {
-            App.ThemeChanged  -= OnThemeChanged;
-            App.UiModeChanged -= OnUiModeChanged;
-            _slideTimer.Stop(); _hideTimer.Stop(); _counterTimer.Stop(); _tileTimer.Stop();
-            _scanCts.Cancel(); _scanCts.Dispose();
+            App.ThemeChanged -= OnThemeChanged;
+            _slideTimer.Stop(); _hideTimer.Stop(); _counterTimer.Stop();
             _driveWatcher?.Stop(); _driveWatcher?.Dispose();
             SystemIntegration.PreventSleep(false);
             if (!_cfg.LiveTilesEnabled) LiveTileService.ClearTile();

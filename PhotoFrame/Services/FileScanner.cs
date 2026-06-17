@@ -46,8 +46,7 @@ namespace PhotoFrame.Services
         public static Task<ScanResult> ScanAsync(
             IEnumerable<string> paths,
             bool recursive,
-            Action<string>? progress = null,
-            System.Threading.CancellationToken ct = default)
+            Action<string>? progress = null)
         {
             return Task.Run(() =>
             {

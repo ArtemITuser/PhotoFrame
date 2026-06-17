@@ -9,9 +9,9 @@
     <LangVersion>10</LangVersion>
     <AssemblyName>PhotoFrame</AssemblyName>
     <RootNamespace>PhotoFrame</RootNamespace>
-    <Version>1.2.0.1</Version>
-    <AssemblyVersion>1.2.0.1</AssemblyVersion>
-    <FileVersion>1.2.0.44</FileVersion>
+    <Version>1.2.0.3</Version>
+    <AssemblyVersion>1.2.0.3</AssemblyVersion>
+    <FileVersion>1.2.0.46</FileVersion>
     <Product>PhotoFrame — Фоторамка</Product>
     <Company>ArtemITuser</Company>
     <Copyright>© 2025 Ochkin Artyom (ArtemITuser). BSL-1.0 License.</Copyright>
@@ -21,7 +21,7 @@
     <Prefer32Bit>false</Prefer32Bit>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <ApplicationIcon>Resources\Icons\AppIcon.ico</ApplicationIcon>
-    <Platforms>AnyCPU;x86;x64</Platforms>
+    <Platforms>AnyCPU;x86</Platforms>
   </PropertyGroup>
 
   <ItemGroup>

@@ -1,0 +1,56 @@
+<!-- Views/UpdateWindow.xaml — v1.0 (build 45) -->
+<Window x:Class="PhotoFrame.Views.UpdateWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Обновление — PhotoFrame"
+        Width="440" Height="240"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource DialogBgBrush}"
+        WindowStyle="SingleBorderWindow">
+    <Grid Margin="24,20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" x:Name="TbTitle"
+                   FontSize="16" FontWeight="SemiBold" FontFamily="Segoe UI"
+                   Foreground="{DynamicResource TextPrimary}"
+                   Text="Доступно обновление" Margin="0,0,0,8"/>
+
+        <TextBlock Grid.Row="1" x:Name="TbDesc"
+                   FontSize="13" FontFamily="Segoe UI"
+                   Foreground="{DynamicResource TextSecondary}"
+                   TextWrapping="Wrap" Margin="0,0,0,16"
+                   Text="Новая версия PhotoFrame готова к установке."/>
+
+        <!-- Progress bar (hidden until download starts) -->
+        <ProgressBar Grid.Row="2" x:Name="PbProgress"
+                     Height="6" VerticalAlignment="Center"
+                     Minimum="0" Maximum="100" Value="0"
+                     Visibility="Collapsed"
+                     Foreground="{DynamicResource AccentBrush}"
+                     Background="{DynamicResource Surface2Brush}"/>
+
+        <TextBlock Grid.Row="3" x:Name="TbProgress"
+                   FontSize="11" FontFamily="Segoe UI"
+                   Foreground="{DynamicResource TextSecondary}"
+                   Margin="0,6,0,16" Visibility="Collapsed"/>
+
+        <StackPanel Grid.Row="4" Orientation="Horizontal"
+                    HorizontalAlignment="Right">
+            <Button x:Name="BtnLater" Content="Позже"
+                    Width="90" Height="34" Margin="0,0,10,0"
+                    Style="{DynamicResource SecondaryButton}"
+                    Click="OnLater"/>
+            <Button x:Name="BtnUpdate" Content="Установить"
+                    Width="120" Height="34"
+                    Style="{DynamicResource AccentButton}"
+                    Click="OnUpdate"/>
+        </StackPanel>
+    </Grid>
+</Window>

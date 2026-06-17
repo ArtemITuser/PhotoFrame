@@ -1,11 +1,9 @@
-<!-- MainWindow.xaml — v4.0 (build 43)
-     Transparency: AllowsTransparency=True + WindowStyle=None + Background=Transparent.
-     DWM Acrylic/Mica visible through transparent WPF background.
-     Touch: SwipeZone under toolbar, all buttons Stylus.IsFlicksEnabled=False.
-     Aero7: toolbar buttons swap to Aero7ToolbarButton style at runtime.
-             caption buttons swap to Aero7CaptionButton style at runtime.
-             PNG icons loaded by IconHelper from Resources/Icons/.
-     Modern: ToolbarButton style + Segoe MDL2 Assets glyphs.
+<!-- MainWindow.xaml — v3.6 (build 38)
+     Touch: кнопки тулбара работают через TouchUp/Click (WPF native).
+     Свайпы: только через SwipeZone (Rectangle над фото, под тулбаром).
+     Прозрачность: AllowsTransparency=True + WindowStyle=None + Transparent BG.
+     DWM Acrylic/Mica виден через Transparent фон WPF.
+     Кастомный заголовок (TitleBar) вместо системного.
 -->
 <Window x:Class="PhotoFrame.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -26,18 +24,22 @@
 
     <Grid x:Name="RootGrid" ClipToBounds="True">
 
-        <!-- Semi-transparent main background — DWM Acrylic/Mica shows through -->
+        <!-- Полупрозрачный фон — DWM Acrylic/Mica виден через него -->
         <Rectangle x:Name="MainBgRect"
                    Fill="{DynamicResource MainBgBrush}"
                    IsHitTestVisible="False"/>
 
-        <!-- Photo layers -->
+        <!-- Слои фото -->
         <Image x:Name="ImgA" Stretch="Uniform" StretchDirection="Both"
                IsHitTestVisible="False"/>
         <Image x:Name="ImgB" Stretch="Uniform" StretchDirection="Both"
                Opacity="0" IsHitTestVisible="False"/>
 
-        <!-- SwipeZone: touch swipes over photo, below toolbar -->
+        <!-- ═══════════════════════════════════════════════════════════
+             SwipeZone: ловит ТОЛЬКО touch-свайпы над фото.
+             Находится НИЖЕ тулбара в Z-order, поэтому кнопки
+             тулбара получают touch-клики первыми.
+        ═══════════════════════════════════════════════════════════ -->
         <Rectangle x:Name="SwipeZone"
                    Fill="Transparent"
                    Margin="0,32,0,72"
@@ -49,7 +51,7 @@
                    MouseDown="OnPhotoAreaMouseDown"
                    MouseRightButtonUp="OnRightClick"/>
 
-        <!-- Overlay: directory (top-left) -->
+        <!-- Оверлей: путь (левый верх) -->
         <Border x:Name="OverlayDir" HorizontalAlignment="Left" VerticalAlignment="Top"
                 Style="{DynamicResource OverlayBadge}" Margin="12,36,0,0" MaxWidth="500"
                 IsHitTestVisible="False" Visibility="Collapsed">
@@ -57,7 +59,7 @@
                        TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"/>
         </Border>
 
-        <!-- Overlay: GPS (top centre) -->
+        <!-- Оверлей: GPS (верх центр) -->
         <Border x:Name="OverlayLoc" HorizontalAlignment="Center" VerticalAlignment="Top"
                 Style="{DynamicResource OverlayBadge}" Margin="0,36,0,0"
                 IsHitTestVisible="False" Visibility="Collapsed">
@@ -65,14 +67,14 @@
                        TextAlignment="Center"/>
         </Border>
 
-        <!-- Overlay: date (bottom-right) -->
+        <!-- Оверлей: дата (правый низ) -->
         <Border x:Name="OverlayDate" HorizontalAlignment="Right" VerticalAlignment="Bottom"
                 Style="{DynamicResource OverlayBadge}" Margin="0,0,12,76"
                 IsHitTestVisible="False" Visibility="Collapsed">
             <TextBlock x:Name="TbDate" Style="{DynamicResource OverlayText}"/>
         </Border>
 
-        <!-- Counter (centre bottom) -->
+        <!-- Счётчик (центр низа, авто-скрытие) -->
         <Border x:Name="CounterBadge" HorizontalAlignment="Center" VerticalAlignment="Bottom"
                 Style="{DynamicResource OverlayBadge}" Margin="0,0,0,76"
                 IsHitTestVisible="False">
@@ -80,7 +82,7 @@
                        FontSize="13" Opacity="0.9"/>
         </Border>
 
-        <!-- Empty state -->
+        <!-- Пустое состояние -->
         <StackPanel x:Name="EmptyPanel" HorizontalAlignment="Center"
                     VerticalAlignment="Center" Visibility="Collapsed">
             <TextBlock Text="&#xE8B7;" FontFamily="Segoe MDL2 Assets"
@@ -93,7 +95,7 @@
                     HorizontalAlignment="Center" Padding="28,9" Click="OnBtnSettings"/>
         </StackPanel>
 
-        <!-- Scanning panel -->
+        <!-- Сканирование -->
         <Border x:Name="ScanPanel" Background="#CC000000" Visibility="Collapsed">
             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                 <TextBlock Text="Поиск фотографий…" Foreground="White" FontSize="18"
@@ -104,7 +106,7 @@
             </StackPanel>
         </Border>
 
-        <!-- Disk error banner -->
+        <!-- Баннер ошибок диска -->
         <Border x:Name="DiskErrorBanner" Visibility="Collapsed"
                 VerticalAlignment="Top" Margin="0,32,0,0"
                 Background="#EE8B0000" Panel.ZIndex="50">
@@ -130,7 +132,7 @@
             </Grid>
         </Border>
 
-        <!-- Context popup -->
+        <!-- Контекстное меню (Popup) -->
         <Popup x:Name="ContextPopup" Placement="MousePoint"
                AllowsTransparency="True" Focusable="False"
                StaysOpen="False" PopupAnimation="Fade">
@@ -189,10 +191,12 @@
             </Border>
         </Popup>
 
-        <!-- ═══════════════════════════════════════════════════════
-             TOOLBAR — always dark, above photo.
-             Style on each button is overridden at runtime for Aero7.
-        ═══════════════════════════════════════════════════════ -->
+        <!-- ═══════════════════════════════════════════════════════════
+             ТУЛБАР — ВСЕГДА тёмный, поверх фото.
+             Кнопки используют Click (работает и для мыши, и для touch).
+             Stylus.IsFlicksEnabled=False на каждой кнопке предотвращает
+             конфликт с системными touch-жестами.
+        ═══════════════════════════════════════════════════════════ -->
         <Border x:Name="Toolbar" VerticalAlignment="Bottom"
                 Background="{DynamicResource ToolbarBgBrush}" Height="72"
                 Panel.ZIndex="100">
@@ -206,7 +210,7 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <!-- Left: PlayMode + interval -->
+                <!-- Левая: PlayMode + интервал -->
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                     <Button x:Name="BtnPlayMode"
                             Style="{DynamicResource ToolbarButton}"
@@ -221,11 +225,10 @@
                                        Style="{StaticResource HoverLabel}"/>
                         </StackPanel>
                     </Button>
-                    <Button x:Name="BtnIntervalDown"
-                            Style="{DynamicResource ToolbarButton}"
+                    <Button Style="{DynamicResource ToolbarButton}"
                             Width="44" Height="60"
                             Stylus.IsFlicksEnabled="False"
-                            ToolTip="Меньше" Click="OnIntervalDown">
+                            x:Name="BtnIntervalDown" ToolTip="Меньше" Click="OnIntervalDown">
                         <StackPanel>
                             <TextBlock Text="&#x2212;" FontSize="20" Foreground="White"
                                        HorizontalAlignment="Center"/>
@@ -238,11 +241,10 @@
                                    FontSize="13" FontFamily="Segoe UI"
                                    MinWidth="38" TextAlignment="Center"/>
                     </Border>
-                    <Button x:Name="BtnIntervalUp"
-                            Style="{DynamicResource ToolbarButton}"
+                    <Button Style="{DynamicResource ToolbarButton}"
                             Width="44" Height="60"
                             Stylus.IsFlicksEnabled="False"
-                            ToolTip="Больше" Click="OnIntervalUp">
+                            x:Name="BtnIntervalUp" ToolTip="Больше" Click="OnIntervalUp">
                         <StackPanel>
                             <TextBlock Text="+" FontSize="20" Foreground="White"
                                        HorizontalAlignment="Center"/>
@@ -251,8 +253,10 @@
                     </Button>
                 </StackPanel>
 
-                <!-- Centre: navigation -->
-                <StackPanel Grid.Column="1" Orientation="Horizontal"
+                <!-- Центр: навигация — ColumnSpan=3 даёт истинный центр окна
+                     (левая и правая группы кнопок разной ширины). -->
+                <StackPanel Grid.Column="0" Grid.ColumnSpan="3" Panel.ZIndex="1"
+                            Orientation="Horizontal"
                             HorizontalAlignment="Center" VerticalAlignment="Center">
                     <Button x:Name="BtnPrev"
                             Style="{DynamicResource ToolbarButton}"
@@ -293,7 +297,7 @@
                     </Button>
                 </StackPanel>
 
-                <!-- Right: theme, settings, fullscreen -->
+                <!-- Правая: тема, настройки, полный экран -->
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                     <Button x:Name="BtnTheme"
                             Style="{DynamicResource ToolbarButton}"
@@ -337,10 +341,10 @@
             </Grid>
         </Border>
 
-        <!-- ═══════════════════════════════════════════════════════
-             TITLE BAR (WindowStyle=None)
-             Caption button styles swapped at runtime for Aero7.
-        ═══════════════════════════════════════════════════════ -->
+        <!-- ═══════════════════════════════════════════════════════════
+             КАСТОМНЫЙ ЗАГОЛОВОК (WindowStyle=None)
+             Drag + Min/Max/Close кнопки.
+        ═══════════════════════════════════════════════════════════ -->
         <Border x:Name="TitleBar" Height="32" VerticalAlignment="Top"
                 Background="#22000000" Panel.ZIndex="200"
                 MouseLeftButtonDown="OnTitleBarDrag">
@@ -349,34 +353,27 @@
                            Foreground="#AAFFFFFF" FontSize="11" FontFamily="Segoe UI"
                            VerticalAlignment="Center" Margin="8,0,0,0"
                            IsHitTestVisible="False"/>
-                <StackPanel x:Name="CaptionButtons"
-                            Orientation="Horizontal" HorizontalAlignment="Right"
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
                             VerticalAlignment="Center">
-                    <!-- Minimize -->
-                    <Button x:Name="BtnWinMin"
-                            Width="46" Height="32" Background="Transparent"
+                    <Button Width="46" Height="32" Background="Transparent"
                             BorderThickness="0" Cursor="Hand"
                             Stylus.IsFlicksEnabled="False"
-                            Click="OnWinMinimize" ToolTip="Свернуть">
+                            x:Name="BtnWinMinimize" Click="OnWinMinimize" ToolTip="Свернуть">
                         <TextBlock Text="&#xE921;" FontFamily="Segoe MDL2 Assets"
                                    FontSize="10" Foreground="White"/>
                     </Button>
-                    <!-- Maximize/Restore -->
-                    <Button x:Name="BtnWinMax"
-                            Width="46" Height="32" Background="Transparent"
+                    <Button Width="46" Height="32" Background="Transparent"
                             BorderThickness="0" Cursor="Hand"
                             Stylus.IsFlicksEnabled="False"
-                            Click="OnWinMaximize">
+                            x:Name="BtnWinMaximize" Click="OnWinMaximize">
                         <TextBlock x:Name="TbWinMax" Text="&#xE922;"
                                    FontFamily="Segoe MDL2 Assets"
                                    FontSize="10" Foreground="White"/>
                     </Button>
-                    <!-- Close -->
-                    <Button x:Name="BtnWinClose"
-                            Width="46" Height="32" Background="Transparent"
+                    <Button Width="46" Height="32" Background="Transparent"
                             BorderThickness="0" Cursor="Hand"
                             Stylus.IsFlicksEnabled="False"
-                            Click="OnWinClose" ToolTip="Закрыть">
+                            x:Name="BtnWinClose" Click="OnWinClose" ToolTip="Закрыть">
                         <TextBlock Text="&#xE8BB;" FontFamily="Segoe MDL2 Assets"
                                    FontSize="10" Foreground="White"/>
                     </Button>

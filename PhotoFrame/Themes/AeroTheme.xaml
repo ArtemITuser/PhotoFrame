@@ -630,4 +630,155 @@
         </Setter>
     </Style>
 
+    <!-- ══ Aero7 Slider ══════════════════════════════════════════════════════
+         Overrides CommonStyles TargetType="Slider".
+         Track: glass recessed channel. Decrease: Aero blue fill (progress).
+         Thumb: glass blue pill with gloss, 16×22 px, draggable.
+         Touch-friendly: MinHeight=40, IsMoveToPointEnabled=True.
+    ══════════════════════════════════════════════════════════════════════ -->
+
+    <!-- Track decrease (filled progress) -->
+    <Style x:Key="Aero7SliderDecreaseBtn" TargetType="RepeatButton">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="Focusable"             Value="False"/>
+        <Setter Property="IsTabStop"             Value="False"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RepeatButton">
+                    <Border Height="5" CornerRadius="2,0,0,2">
+                        <Border.Background>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                <GradientStop Color="#FF3B8ED6" Offset="0"/>
+                                <GradientStop Color="#FF1A5FA8" Offset="1"/>
+                            </LinearGradientBrush>
+                        </Border.Background>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Track increase (unfilled) -->
+    <Style x:Key="Aero7SliderIncreaseBtn" TargetType="RepeatButton">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="Focusable"             Value="False"/>
+        <Setter Property="IsTabStop"             Value="False"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RepeatButton">
+                    <Border Height="5" CornerRadius="0,2,2,0">
+                        <Border.Background>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                <GradientStop Color="#FFD4EDFC" Offset="0"/>
+                                <GradientStop Color="#FFB0D0EC" Offset="1"/>
+                            </LinearGradientBrush>
+                        </Border.Background>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Glass thumb -->
+    <Style x:Key="Aero7SliderThumbStyle" TargetType="Thumb">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="Width"                 Value="16"/>
+        <Setter Property="Height"                Value="24"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Thumb">
+                    <Grid Width="16" Height="24">
+                        <Border x:Name="Outer" CornerRadius="4" BorderThickness="1">
+                            <Border.BorderBrush>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                    <GradientStop Color="#FF8EC7F8" Offset="0"/>
+                                    <GradientStop Color="#FF2B7CC5" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.BorderBrush>
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                    <GradientStop Color="#FFD4EDFC" Offset="0"/>
+                                    <GradientStop Color="#FF6DB8F0" Offset="0.48"/>
+                                    <GradientStop Color="#FF3B8ED6" Offset="0.50"/>
+                                    <GradientStop Color="#FF5AABF0" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.Background>
+                        </Border>
+                        <!-- Gloss upper half -->
+                        <Border CornerRadius="3,3,0,0" Margin="1,1,1,0"
+                                VerticalAlignment="Top" Height="9">
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                    <GradientStop Color="#88FFFFFF" Offset="0"/>
+                                    <GradientStop Color="#11FFFFFF" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.Background>
+                        </Border>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Outer" Property="Opacity" Value="0.80"/>
+                        </Trigger>
+                        <Trigger Property="IsDragging" Value="True">
+                            <Setter TargetName="Outer" Property="Opacity" Value="0.60"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Outer" Property="Opacity" Value="0.35"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Full Slider — overrides CommonStyles TargetType="Slider" -->
+    <Style TargetType="Slider">
+        <Setter Property="MinHeight"              Value="40"/>
+        <Setter Property="IsMoveToPointEnabled"   Value="True"/>
+        <Setter Property="Stylus.IsFlicksEnabled" Value="False"/>
+        <Setter Property="Foreground"             Value="{DynamicResource AccentBrush}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Slider">
+                    <!-- Extra vertical padding so thumb doesn't clip -->
+                    <Border Padding="0,8">
+                        <Grid>
+                            <!-- Glass channel background -->
+                            <Border Height="5" VerticalAlignment="Center"
+                                    CornerRadius="3" BorderThickness="1">
+                                <Border.BorderBrush>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                        <GradientStop Color="#AA8EC7F8" Offset="0"/>
+                                        <GradientStop Color="#882B7CC5" Offset="1"/>
+                                    </LinearGradientBrush>
+                                </Border.BorderBrush>
+                                <Border.Background>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                        <GradientStop Color="#FFE8F4FD" Offset="0"/>
+                                        <GradientStop Color="#FFB8D8F0" Offset="1"/>
+                                    </LinearGradientBrush>
+                                </Border.Background>
+                            </Border>
+                            <!-- WPF Track (must be named PART_Track) -->
+                            <Track Name="PART_Track">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton
+                                        Style="{StaticResource Aero7SliderDecreaseBtn}"/>
+                                </Track.DecreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb
+                                        Style="{StaticResource Aero7SliderThumbStyle}"/>
+                                </Track.Thumb>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton
+                                        Style="{StaticResource Aero7SliderIncreaseBtn}"/>
+                                </Track.IncreaseRepeatButton>
+                            </Track>
+                        </Grid>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
 </ResourceDictionary>

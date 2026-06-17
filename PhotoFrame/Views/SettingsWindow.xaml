@@ -129,9 +129,9 @@
                             </StackPanel>
                         </Border>
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                            <Button Content="&#xE896;  Список (.txt)" Style="{DynamicResource SecondaryButton}"
+                            <Button Content="&#xE8E5;  Список (.txt)" Style="{DynamicResource SecondaryButton}"
                                     Margin="0,0,6,0" Click="OnExportTxt"/>
-                            <Button Content="&#xE8A1;  CSV" Style="{DynamicResource SecondaryButton}"
+                            <Button Content="&#xE9D9;  CSV" Style="{DynamicResource SecondaryButton}"
                                     Click="OnExportCsv"/>
                         </StackPanel>
                         <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
@@ -211,29 +211,16 @@
                         <TextBlock x:Name="TbEffectStatus" FontSize="11" Margin="0,4,0,16"
                                    Foreground="{DynamicResource TextSecondary}"/>
                         <TextBlock Text="РЕЖИМ ИНТЕРФЕЙСА (ЭКСПЕРИМЕНТАЛЬНО)" Style="{DynamicResource SectionHeader}"/>
-                        <ComboBox x:Name="CmbUiMode" Width="260" HorizontalAlignment="Left" Margin="0,6,0,4"/>
+                        <ComboBox x:Name="CmbUiMode" Width="260" HorizontalAlignment="Left" Margin="0,6,0,4"
+                                  SelectionChanged="OnUiModeChanged"/>
                         <TextBlock TextWrapping="Wrap" FontSize="11" Margin="0,0,0,12"
                                    Foreground="{DynamicResource TextSecondary}"
                                    Text="Aero7: имитирует стиль Windows 7 Aero Glass с PNG иконками и глянцевыми кнопками."/>
                         <TextBlock Text="LIVE TILES" Style="{DynamicResource SectionHeader}"/>
                         <CheckBox x:Name="ChkLiveTiles" Content="Обновлять плитку в меню Пуск (только ClickOnce)"/>
-                        <CheckBox x:Name="ChkLiveTilesLarge"
-                                  Content="Включая крупную плитку 310×310"
-                                  Margin="20,0,0,0"/>
-                        <TextBlock TextWrapping="Wrap" FontSize="11" Margin="0,4,0,8"
+                        <TextBlock TextWrapping="Wrap" FontSize="11" Margin="0,4,0,0"
                                    Foreground="{DynamicResource TextSecondary}"
-                                   Text="Размеры: 71×71 · 150×150 · 310×150 · 310×310. Фото — фон каждой плитки напрямую."/>
-                        <TextBlock Text="Интервал обновления плитки (независимо от слайдшоу)"
-                                   FontSize="12" Foreground="{DynamicResource TextSecondary}"
-                                   Margin="0,4,0,2"/>
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,2">
-                            <Slider x:Name="SldTileCycle" Minimum="0" Maximum="300"
-                                    Width="200" TickFrequency="5" IsSnapToTickEnabled="True"
-                                    ValueChanged="OnTileCycleChanged" Margin="0,0,10,0"/>
-                            <TextBlock x:Name="TbTileCycleVal" Text="Как слайдшоу"
-                                       VerticalAlignment="Center" FontSize="12"
-                                       Foreground="{DynamicResource TextSecondary}"/>
-                        </StackPanel>
+                                   Text="Размеры: Маленькая (71×71), Средняя (150×150), Широкая (310×150), Крупная (310×310)."/>
                     </StackPanel>
 
                     <!-- ══ СИСТЕМА ══ -->
