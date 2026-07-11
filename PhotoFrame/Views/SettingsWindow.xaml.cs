@@ -1,8 +1,11 @@
-// Views/SettingsWindow.xaml.cs — v3.5
+// Views/SettingsWindow.xaml.cs — v3.6 (build 52)
+// + Импорт списка папок из .txt/.csv (симметрично экспорту), корректные
+//   MDL2-глифы E896/E8A1 (Download/OpenFile — семантика "получить/открыть")
 // TryFindResource everywhere. Per-section try/catch in OnLoaded.
 // UiMode (Modern/Aero7). CounterFormat. LiveTiles. About/GitHub/UpdateCheck.
 
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
@@ -12,6 +15,7 @@ using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using PhotoFrame.Converters;
@@ -82,10 +86,11 @@ namespace PhotoFrame.Views
 
         private void LoadOverlays()
         {
-            ChkDir.IsChecked  = _w.ShowDirectoryOverlay;
-            ChkDate.IsChecked = _w.ShowDateOverlay;
-            ChkLoc.IsChecked  = _w.ShowLocationOverlay;
-            SldFont.Value     = _w.OverlayFontSize;
+            ChkDir.IsChecked     = _w.ShowDirectoryOverlay;
+            ChkDate.IsChecked    = _w.ShowDateOverlay;
+            ChkLoc.IsChecked     = _w.ShowLocationOverlay;
+            ChkGeocode.IsChecked = _w.GpsReverseGeocodeEnabled;
+            SldFont.Value        = _w.OverlayFontSize;
         }
 
         private void LoadPlayback()
@@ -106,6 +111,9 @@ namespace PhotoFrame.Views
             SelectTag(CmbTheme, _w.Theme);
             ChkMica.IsChecked      = _w.EnableMicaEffect;
             ChkLiveTiles.IsChecked = _w.LiveTilesEnabled;
+            SldTileInterval.Value  = Math.Max(0, Math.Min(120, _w.LiveTileCycleIntervalSeconds));
+            FillCombo<TilePhotoDistance>(CmbTileDistance, new TilePhotoDistanceToStringConverter());
+            SelectTag(CmbTileDistance, _w.TilePhotoDistance);
 
             FillCombo<UiMode>(CmbUiMode, new UiModeToStringConverter());
             SelectTag(CmbUiMode, _w.UiMode);
@@ -115,7 +123,14 @@ namespace PhotoFrame.Views
                 TbEffectStatus.Text = _w.EnableMicaEffect
                     ? "Включено. Win11 = Mica, Win10 = Acrylic blur."
                     : "Выключено — сплошной фон.";
+
+            // Кнопка закрепления плитки видна только если WinRT API доступен (Win10/11)
+            if (BtnPinTile != null)
+                BtnPinTile.Visibility = LiveTileService.IsPinningSupported()
+                    ? Visibility.Visible : Visibility.Collapsed;
         }
+
+        private bool _loadingAutoOff;
 
         private void LoadSystem()
         {
@@ -126,6 +141,29 @@ namespace PhotoFrame.Views
             if (TbScrStatus != null)
                 TbScrStatus.Text = scr ? "✔ Зарегистрирован" : "Не зарегистрирован";
             SldScrDelay.Value = _w.ScreensaverDelayMinutes;
+
+            _loadingAutoOff = true;
+            FillCombo<AutoOffMode>(CmbAutoOffMode, new AutoOffModeToStringConverter());
+            SelectTag(CmbAutoOffMode, _w.AutoOffMode);
+            SldAutoOffFrom.Value = _w.AutoOffFromMinutes;
+            SldAutoOffTo.Value   = _w.AutoOffToMinutes;
+            ChkAutoOffManualCoords.IsChecked = _w.AutoOffUseManualCoords;
+            TbAutoOffLat.Text = _w.AutoOffLatitude?.ToString(
+                System.Globalization.CultureInfo.InvariantCulture) ?? "";
+            TbAutoOffLon.Text = _w.AutoOffLongitude?.ToString(
+                System.Globalization.CultureInfo.InvariantCulture) ?? "";
+            PAutoOffCoords.Visibility = _w.AutoOffUseManualCoords
+                ? Visibility.Visible : Visibility.Collapsed;
+            _loadingAutoOff = false;
+            UpdateAutoOffPanelVisibility();
+        }
+
+        private void UpdateAutoOffPanelVisibility()
+        {
+            if (!SelectedTag<AutoOffMode>(CmbAutoOffMode, out var mode)) return;
+            PAutoOffManual.Visibility     = mode == AutoOffMode.ManualSchedule    ? Visibility.Visible : Visibility.Collapsed;
+            PAutoOffSun.Visibility        = mode == AutoOffMode.SunsetToSunrise   ? Visibility.Visible : Visibility.Collapsed;
+            TbAutoOffSmartInfo.Visibility = mode == AutoOffMode.SmartUsage        ? Visibility.Visible : Visibility.Collapsed;
         }
 
         private void LoadPower()
@@ -224,6 +262,26 @@ namespace PhotoFrame.Views
                 if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK)
                 { AddPath(dlg.SelectedPath); _ = LoadPreviewAsync(); }
 #pragma warning restore CA1416
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка: {ex.Message}", "PhotoFrame",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        /// <summary>
+        /// Открывает браузер подключённых USB-устройств (Lumia/Android/iOS),
+        /// импортирует выбранную папку в локальный кеш и добавляет её как
+        /// обычный источник (FileScanner работает с ней как с любой папкой).
+        /// </summary>
+        private void OnAddDevice(object s, RoutedEventArgs e)
+        {
+            try
+            {
+                var dlg = new DeviceBrowserWindow { Owner = this };
+                if (dlg.ShowDialog() == true && !string.IsNullOrEmpty(dlg.ImportedPath))
+                { AddPath(dlg.ImportedPath); _ = LoadPreviewAsync(); }
             }
             catch (Exception ex)
             {
@@ -433,6 +491,94 @@ namespace PhotoFrame.Views
             }
         }
 
+        // ─── IMPORT ──────────────────────────────────────────────────────────────
+
+        private void OnImportTxt(object s, RoutedEventArgs e) => ImportList(false);
+        private void OnImportCsv(object s, RoutedEventArgs e) => ImportList(true);
+
+        /// <summary>
+        /// Читает список папок из ранее сохранённого файла (см. <see cref="ExportList"/>)
+        /// и добавляет их в источники. Понимает оба формата TXT: дерево вида
+        /// "📁 путь" + "   • имя.jpg" (по умолчанию при выгрузке) и плоский список
+        /// путей по одному на строку. Для CSV использует колонку "Папка"
+        /// (или, если её нет, извлекает каталог из колонки "Путь").
+        /// </summary>
+        private void ImportList(bool csv)
+        {
+            try
+            {
+                var dlg = new Microsoft.Win32.OpenFileDialog
+                {
+                    Filter = csv ? "CSV|*.csv|Все файлы|*.*" : "TXT|*.txt|Все файлы|*.*",
+                    Multiselect = false
+                };
+                if (dlg.ShowDialog() != true) return;
+
+                var lines = File.ReadAllLines(dlg.FileName);
+                var found = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                if (csv)
+                {
+                    foreach (var raw in lines.Skip(1)) // пропускаем заголовок "Путь;Папка;..."
+                    {
+                        if (string.IsNullOrWhiteSpace(raw)) continue;
+                        var cols = raw.Split(';');
+                        // cols[1] = "Папка" если строка соответствует формату экспорта;
+                        // иначе берём каталог из cols[0] = "Путь".
+                        string? candidate = cols.Length > 1 && !string.IsNullOrWhiteSpace(cols[1])
+                            ? cols[1]
+                            : (cols.Length > 0 ? SafeGetDirectory(cols[0]) : null);
+                        if (!string.IsNullOrWhiteSpace(candidate)) found.Add(candidate);
+                    }
+                }
+                else
+                {
+                    foreach (var raw in lines)
+                    {
+                        var line = raw.TrimEnd();
+                        if (line.StartsWith("📁 ", StringComparison.Ordinal))
+                            found.Add(line[2..].Trim());
+                        else if (line.Length > 3 && !line.StartsWith("   •", StringComparison.Ordinal)
+                                 && !line.StartsWith("─", StringComparison.Ordinal)
+                                 && !line.StartsWith("PhotoFrame", StringComparison.Ordinal)
+                                 && !line.StartsWith("Итого", StringComparison.Ordinal)
+                                 && (line.Contains(":\\") || line.StartsWith("\\\\", StringComparison.Ordinal)))
+                        {
+                            // Плоский список путей (файл или папка) — добавляем каталог.
+                            var candidate = Directory.Exists(line) ? line : SafeGetDirectory(line);
+                            if (!string.IsNullOrWhiteSpace(candidate)) found.Add(candidate!);
+                        }
+                    }
+                }
+
+                int added = 0, skipped = 0;
+                foreach (var folder in found)
+                {
+                    if (Directory.Exists(folder)) { AddPath(folder); added++; }
+                    else skipped++;
+                }
+
+                if (added > 0) _ = LoadPreviewAsync();
+                MessageBox.Show(
+                    skipped == 0
+                        ? $"Добавлено папок: {added}."
+                        : $"Добавлено папок: {added}. Пропущено (не найдено на диске): {skipped}.",
+                    "Импорт списка", MessageBoxButton.OK,
+                    added > 0 ? MessageBoxImage.Information : MessageBoxImage.Warning);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка импорта: {ex.Message}", "Ошибка",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private static string? SafeGetDirectory(string path)
+        {
+            try { return Path.GetDirectoryName(path.Trim()); }
+            catch { return null; }
+        }
+
         // ─── SLIDERS ─────────────────────────────────────────────────────────────
 
         private void OnIntervalChanged(object s, RoutedPropertyChangedEventArgs<double> e)
@@ -445,12 +591,178 @@ namespace PhotoFrame.Views
         { if (TbFontVal != null) TbFontVal.Text = $"{Math.Round(e.NewValue,1)} pt"; }
         private void OnDurChanged(object s, RoutedPropertyChangedEventArgs<double> e)
         { if (TbDurVal != null) TbDurVal.Text = $"{e.NewValue:F2} с"; }
+        // ─── Редактируемые числовые поля (слайдер ↔ текстовое поле) ────────────────
+        // build 52: значения теперь можно не только тянуть слайдером, но и
+        // вписать вручную. Общий парсер/коммит переиспользуется для всех пар
+        // слайдер+TextBox (экономит дублирование, единая логика валидации).
+
+        /// <summary>Enter в редактируемом поле переносит фокус — это штатно
+        /// вызывает LostFocus и тем самым фиксирует введённое значение.</summary>
+        private void OnEditableFieldKeyDown(object s, KeyEventArgs e)
+        {
+            if (e.Key != Key.Enter || s is not TextBox tb) return;
+            tb.MoveFocus(new TraversalRequest(FocusNavigationDirection.Next));
+            e.Handled = true;
+        }
+
+        /// <summary>Извлекает первое целое число из произвольного текста
+        /// ("42 мин", "  17", "не управлять" → null) и ограничивает диапазоном слайдера.</summary>
+        private static bool TryParseClampedInt(string? text, Slider slider, out int minutes)
+        {
+            minutes = 0;
+            if (string.IsNullOrWhiteSpace(text)) return false;
+            var m = System.Text.RegularExpressions.Regex.Match(text, @"-?\d+");
+            if (!m.Success || !int.TryParse(m.Value, out int v)) return false;
+            minutes = Math.Clamp(v, (int)slider.Minimum, (int)slider.Maximum);
+            return true;
+        }
+
         private void OnScrDelayChanged(object s, RoutedPropertyChangedEventArgs<double> e)
-        { if (TbScrDelayVal != null) TbScrDelayVal.Text = $"{(int)e.NewValue} мин"; }
+        { if (TbScrDelayVal != null) TbScrDelayVal.Text = $"{(int)e.NewValue}"; }
+        private void OnScrDelayTextCommit(object s, RoutedEventArgs e)
+        {
+            if (SldScrDelay == null || TbScrDelayVal == null) return;
+            if (TryParseClampedInt(TbScrDelayVal.Text, SldScrDelay, out int v)) SldScrDelay.Value = v;
+            else TbScrDelayVal.Text = $"{(int)SldScrDelay.Value}";
+        }
+
         private void OnMonOffChanged(object s, RoutedPropertyChangedEventArgs<double> e)
-        { if (TbMonOffVal != null) TbMonOffVal.Text = (int)e.NewValue == 0 ? "Не управлять" : $"{(int)e.NewValue} мин"; }
+        { if (TbMonOffVal != null) TbMonOffVal.Text = $"{(int)e.NewValue}"; }
+        private void OnMonOffTextCommit(object s, RoutedEventArgs e)
+        {
+            if (SldMonOff == null || TbMonOffVal == null) return;
+            if (TryParseClampedInt(TbMonOffVal.Text, SldMonOff, out int v)) SldMonOff.Value = v;
+            else TbMonOffVal.Text = $"{(int)SldMonOff.Value}";
+        }
+
         private void OnSleepChanged(object s, RoutedPropertyChangedEventArgs<double> e)
-        { if (TbSleepVal != null) TbSleepVal.Text = (int)e.NewValue == 0 ? "Не управлять" : $"{(int)e.NewValue} мин"; }
+        { if (TbSleepVal != null) TbSleepVal.Text = $"{(int)e.NewValue}"; }
+        private void OnSleepTextCommit(object s, RoutedEventArgs e)
+        {
+            if (SldSleep == null || TbSleepVal == null) return;
+            if (TryParseClampedInt(TbSleepVal.Text, SldSleep, out int v)) SldSleep.Value = v;
+            else TbSleepVal.Text = $"{(int)SldSleep.Value}";
+        }
+
+        private void OnUpdatePeriodChanged(object s, RoutedPropertyChangedEventArgs<double> e)
+        { if (TbUpdatePeriodVal != null) TbUpdatePeriodVal.Text = $"{(int)e.NewValue}"; }
+        private void OnUpdatePeriodTextCommit(object s, RoutedEventArgs e)
+        {
+            if (SldUpdatePeriod == null || TbUpdatePeriodVal == null) return;
+            if (TryParseClampedInt(TbUpdatePeriodVal.Text, SldUpdatePeriod, out int v)) SldUpdatePeriod.Value = v;
+            else TbUpdatePeriodVal.Text = $"{(int)SldUpdatePeriod.Value}";
+        }
+
+        private void OnTileIntervalChanged(object s, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (TbTileIntervalVal == null) return;
+            int v = (int)e.NewValue;
+            TbTileIntervalVal.Text = v == 0 ? "Как слайдшоу" : v >= 60 ? $"{v/60}м {v%60:D2}с" : $"{v} с";
+        }
+
+        private async void OnPinTile(object s, RoutedEventArgs e)
+        {
+            if (BtnPinTile != null) BtnPinTile.IsEnabled = false;
+            bool ok = await LiveTileService.TryPinTileAsync();
+            MessageBox.Show(
+                ok ? "Плитка PhotoFrame закреплена на начальном экране."
+                   : "Не удалось закрепить плитку. Возможно, она уже закреплена.",
+                "Плитка", MessageBoxButton.OK,
+                ok ? MessageBoxImage.Information : MessageBoxImage.Warning);
+            if (BtnPinTile != null) BtnPinTile.IsEnabled = true;
+        }
+
+        private void OnSafeCleanup(object s, RoutedEventArgs e)
+        {
+            var (ok, msg) = SystemIntegration.SafeCleanup();
+            if (TbCleanupStatus != null) TbCleanupStatus.Text = msg;
+            RefreshMemoryDisplay();
+        }
+
+        private void RefreshMemoryDisplay()
+        {
+            try
+            {
+                var mi = SystemIntegration.GetMemoryUsageInfo();
+                if (TbMemWorkingSet != null)
+                    TbMemWorkingSet.Text = $"Рабочий набор: {mi.WorkingSetBytes/1048576} МБ  " +
+                                          $"(приватный: {mi.PrivateBytes/1048576} МБ)";
+                if (TbMemManaged != null)
+                    TbMemManaged.Text = $"Управляемая куча GC: {mi.GcHeapBytes/1048576} МБ";
+                if (TbMemCache != null)
+                    TbMemCache.Text = mi.ThumbCacheCount > 0
+                        ? $"Кеш превью: {mi.ThumbCacheCount} файлов  ({mi.ThumbCacheBytes/1024} КБ)"
+                        : "Кеш превью: пуст";
+            }
+            catch { }
+        }
+
+        // ─── АВТООТКЛЮЧЕНИЕ РАМКИ ────────────────────────────────────────────────
+
+        private void OnAutoOffModeChanged(object s, SelectionChangedEventArgs e)
+        {
+            if (_loadingAutoOff) return;
+            UpdateAutoOffPanelVisibility();
+        }
+
+        private void OnAutoOffFromChanged(object s, RoutedPropertyChangedEventArgs<double> e)
+        { if (TbAutoOffFromVal != null) TbAutoOffFromVal.Text = FormatMinutesOfDay((int)e.NewValue); }
+
+        private void OnAutoOffToChanged(object s, RoutedPropertyChangedEventArgs<double> e)
+        { if (TbAutoOffToVal != null) TbAutoOffToVal.Text = FormatMinutesOfDay((int)e.NewValue); }
+
+        private void OnAutoOffFromTextCommit(object s, RoutedEventArgs e)
+        {
+            if (SldAutoOffFrom == null || TbAutoOffFromVal == null) return;
+            if (TryParseTimeOfDay(TbAutoOffFromVal.Text, out int mins)) SldAutoOffFrom.Value = mins;
+            else TbAutoOffFromVal.Text = FormatMinutesOfDay((int)SldAutoOffFrom.Value);
+        }
+
+        private void OnAutoOffToTextCommit(object s, RoutedEventArgs e)
+        {
+            if (SldAutoOffTo == null || TbAutoOffToVal == null) return;
+            if (TryParseTimeOfDay(TbAutoOffToVal.Text, out int mins)) SldAutoOffTo.Value = mins;
+            else TbAutoOffToVal.Text = FormatMinutesOfDay((int)SldAutoOffTo.Value);
+        }
+
+        private static string FormatMinutesOfDay(int totalMinutes)
+            => $"{totalMinutes/60:D2}:{totalMinutes%60:D2}";
+
+        /// <summary>Понимает "23:00", "23.00", "2300" и просто "23" (→ 23:00).</summary>
+        private static bool TryParseTimeOfDay(string? text, out int totalMinutes)
+        {
+            totalMinutes = 0;
+            if (string.IsNullOrWhiteSpace(text)) return false;
+            text = text.Trim().Replace('.', ':');
+
+            int hh, mm = 0;
+            if (text.Contains(':'))
+            {
+                var parts = text.Split(':', StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length < 1 || !int.TryParse(parts[0], out hh)) return false;
+                if (parts.Length >= 2 && !int.TryParse(parts[1], out mm)) return false;
+            }
+            else if (text.Length == 4 && int.TryParse(text, out int packed))
+            {
+                hh = packed / 100; mm = packed % 100;
+            }
+            else if (int.TryParse(text, out hh))
+            {
+                mm = 0;
+            }
+            else return false;
+
+            if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return false;
+            totalMinutes = hh * 60 + mm;
+            return true;
+        }
+
+        private void OnAutoOffCoordsToggled(object s, RoutedEventArgs e)
+        {
+            if (PAutoOffCoords != null)
+                PAutoOffCoords.Visibility = ChkAutoOffManualCoords.IsChecked == true
+                    ? Visibility.Visible : Visibility.Collapsed;
+        }
 
         // ─── SCREENSAVER ─────────────────────────────────────────────────────────
 
@@ -503,6 +815,14 @@ namespace PhotoFrame.Views
                     $"PhotoFrame  v{ver.Major}.{ver.Minor}.{ver.Build}.{ver.Revision}";
             if (TbClickOnceInfo != null)
                 TbClickOnceInfo.Text = SystemIntegration.GetClickOnceInfo();
+            if (TbUpdateMirror != null)
+                TbUpdateMirror.Text = _w.UpdateMirrorUrl ?? "";
+            if (ChkAutoCheckUpdates != null)
+                ChkAutoCheckUpdates.IsChecked = _w.AutoCheckUpdatesEnabled;
+            if (SldUpdatePeriod != null)
+                SldUpdatePeriod.Value = Math.Clamp(_w.UpdateCheckPeriodDays, 1, 30);
+
+            RefreshMemoryDisplay();
 
             // Show 3D app icon in About section
             if (About3DIcon != null)
@@ -525,12 +845,20 @@ namespace PhotoFrame.Views
             try
             {
                 var cur = Assembly.GetExecutingAssembly().GetName().Version ?? new Version(1,0,0,0);
-                var (tag, isNewer) = await SystemIntegration.CheckGitHubUpdateAsync(cur);
-                if (tag == null) { TbUpdateStatus.Text = "Не удалось связаться с GitHub."; return; }
+                string? mirror = string.IsNullOrWhiteSpace(TbUpdateMirror?.Text) ? null : TbUpdateMirror.Text.Trim();
+                var (tag, isNewer) = await SystemIntegration.CheckUpdateAsync(cur, mirror);
+                if (tag == null)
+                {
+                    TbUpdateStatus.Text = mirror != null
+                        ? "Не удалось связаться с указанным зеркалом."
+                        : "Не удалось связаться с GitHub.";
+                    return;
+                }
                 string cs = $"v{cur.Major}.{cur.Minor}.{cur.Build}.{cur.Revision}";
                 TbUpdateStatus.Text = isNewer
                     ? $"⬆ Доступна версия: {tag}  (у вас: {cs})"
                     : $"✔ Актуальная версия ({cs}).";
+                _w.LastUpdateCheckUtc = DateTime.UtcNow.ToString("o");
             }
             catch (Exception ex) { TbUpdateStatus.Text = $"Ошибка: {ex.Message}"; }
         }
@@ -547,7 +875,11 @@ namespace PhotoFrame.Views
             try
             {
                 Collect();
-                SystemIntegration.SetAutostart(ChkAutorun?.IsChecked == true);
+                if (!SystemIntegration.SetAutostart(ChkAutorun?.IsChecked == true, out string autostartErr))
+                {
+                    MessageBox.Show($"Автозагрузка: {autostartErr}", "PhotoFrame",
+                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
                 if (_w.RegisterAsScreensaver)
                     SystemIntegration.SetScreensaverDelay(_w.ScreensaverDelayMinutes);
                 Result = _w;
@@ -576,23 +908,42 @@ namespace PhotoFrame.Views
             _w.WatchRemovableMedia   = ChkWatchRemovable?.IsChecked   == true;
             _w.SuggestRemovableMedia = ChkSuggestRemovable?.IsChecked == true;
 
-            _w.ShowDirectoryOverlay = ChkDir?.IsChecked  == true;
-            _w.ShowDateOverlay      = ChkDate?.IsChecked == true;
-            _w.ShowLocationOverlay  = ChkLoc?.IsChecked  == true;
-            _w.OverlayFontSize      = Math.Round(SldFont?.Value ?? 15, 1);
+            _w.ShowDirectoryOverlay     = ChkDir?.IsChecked     == true;
+            _w.ShowDateOverlay          = ChkDate?.IsChecked    == true;
+            _w.ShowLocationOverlay      = ChkLoc?.IsChecked     == true;
+            _w.GpsReverseGeocodeEnabled = ChkGeocode?.IsChecked == true;
+            _w.OverlayFontSize          = Math.Round(SldFont?.Value ?? 15, 1);
 
             if (SelectedTag<PlayMode>(CmbPlayMode, out var pm))         _w.PlayMode = pm;
             if (SelectedTag<TransitionType>(CmbTransition, out var tt)) _w.TransitionType = tt;
             _w.TransitionDurationSeconds = Math.Round(SldDuration?.Value ?? 0.75, 2);
 
             if (SelectedTag<AppTheme>(CmbTheme, out var th)) _w.Theme = th;
-            _w.EnableMicaEffect = ChkMica?.IsChecked      == true;
-            _w.LiveTilesEnabled = ChkLiveTiles?.IsChecked == true;
+            _w.EnableMicaEffect             = ChkMica?.IsChecked     == true;
+            _w.LiveTilesEnabled             = ChkLiveTiles?.IsChecked == true;
+            _w.LiveTileCycleIntervalSeconds = (int)(SldTileInterval?.Value ?? 0);
+            if (SelectedTag<TilePhotoDistance>(CmbTileDistance, out var tpd)) _w.TilePhotoDistance = tpd;
             if (SelectedTag<UiMode>(CmbUiMode, out var um)) _w.UiMode = um;
 
             _w.MinimizeToTray          = ChkMinToTray?.IsChecked == true;
             _w.RegisterAsScreensaver   = ChkScrReg?.IsChecked    == true;
             _w.ScreensaverDelayMinutes = (int)(SldScrDelay?.Value ?? 5);
+
+            if (SelectedTag<AutoOffMode>(CmbAutoOffMode, out var aom)) _w.AutoOffMode = aom;
+            _w.AutoOffFromMinutes      = (int)(SldAutoOffFrom?.Value ?? 23*60);
+            _w.AutoOffToMinutes        = (int)(SldAutoOffTo?.Value   ?? 7*60);
+            _w.AutoOffUseManualCoords  = ChkAutoOffManualCoords?.IsChecked == true;
+            _w.AutoOffLatitude  = double.TryParse(TbAutoOffLat?.Text,
+                System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var lat) ? lat : null;
+            _w.AutoOffLongitude = double.TryParse(TbAutoOffLon?.Text,
+                System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var lon) ? lon : null;
+
+            _w.UpdateMirrorUrl = string.IsNullOrWhiteSpace(TbUpdateMirror?.Text)
+                ? null : TbUpdateMirror.Text.Trim();
+            _w.AutoCheckUpdatesEnabled = ChkAutoCheckUpdates?.IsChecked == true;
+            _w.UpdateCheckPeriodDays   = (int)(SldUpdatePeriod?.Value ?? 3);
 
             _w.PreventSleep            = ChkNoSleep?.IsChecked == true;
             _w.MonitorOffAfterMinutes  = (int)(SldMonOff?.Value ?? 0);
@@ -639,6 +990,16 @@ namespace PhotoFrame.Views
                 return JsonSerializer.Deserialize<AppSettings>(j, _jo) ?? new AppSettings();
             }
             catch { return new AppSettings(); }
+        }
+
+        private void ListBoxItem_Selected(object sender, RoutedEventArgs e)
+        {
+
+        }
+
+        private void ListBoxItem_Selected_1(object sender, RoutedEventArgs e)
+        {
+
         }
     }
 }

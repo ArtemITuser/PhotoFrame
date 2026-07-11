@@ -27,13 +27,26 @@ namespace PhotoFrame.Models
         public double? Longitude { get; set; }
 
         /// <summary>
-        /// Возвращает форматированную строку координат для оверлея, либо null.
-        /// Пример: «55.7558° N, 37.6173° E»
+        /// Название места на русском (город, страна), полученное через
+        /// обратное геокодирование (см. ReverseGeocodeService). Заполняется
+        /// асинхронно, отдельно от Populate() — опционально, см.
+        /// AppSettings.GpsReverseGeocodeEnabled.
+        /// </summary>
+        public string? ResolvedLocationName { get; set; }
+
+        /// <summary>
+        /// Возвращает строку для оверлея местоположения: название места,
+        /// если геокодирование включено и успешно, иначе сырые координаты,
+        /// иначе null. Пример с геокодированием: «Москва, Россия».
+        /// Пример без него: «55.7558° N, 37.6173° E»
         /// </summary>
         public string? LocationString
         {
             get
             {
+                if (!string.IsNullOrEmpty(ResolvedLocationName))
+                    return ResolvedLocationName;
+
                 if (!Latitude.HasValue || !Longitude.HasValue)
                     return null;
 

@@ -7,14 +7,15 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <LangVersion>10</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>PhotoFrame</AssemblyName>
     <RootNamespace>PhotoFrame</RootNamespace>
-    <Version>1.2.0.3</Version>
-    <AssemblyVersion>1.2.0.3</AssemblyVersion>
-    <FileVersion>1.2.0.46</FileVersion>
+    <Version>1.2.1.0</Version>
+    <AssemblyVersion>1.2.1.0</AssemblyVersion>
+    <FileVersion>1.2.1.52</FileVersion>
     <Product>PhotoFrame — Фоторамка</Product>
     <Company>ArtemITuser</Company>
-    <Copyright>© 2025 Ochkin Artyom (ArtemITuser). BSL-1.0 License.</Copyright>
+    <Copyright>© 2026 Ochkin Artyom (ArtemITuser). BSL-1.0 License.</Copyright>
     <Description>Цифровая фоторамка для Windows 10/11</Description>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <PlatformTarget>AnyCPU</PlatformTarget>
@@ -26,6 +27,9 @@
 
   <ItemGroup>
     <PackageReference Include="System.Management" Version="8.0.0" />
+    <!-- Требуется для "dynamic" — позднее связывание Shell.Application COM
+         в DeviceBrowserService.cs (просмотр Lumia/Android/iOS по USB) -->
+    <PackageReference Include="Microsoft.CSharp" Version="4.7.0" />
   </ItemGroup>
 
   <ItemGroup>

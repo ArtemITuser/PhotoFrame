@@ -1,4 +1,4 @@
-// MainWindow.xaml.cs — v3.6 (build 38)
+// MainWindow.xaml.cs — v3.7 (build 52)
 //
 // TOUCH ARCHITECTURE:
 //   • Кнопки тулбара — стандартный Click (работает и мышью, и тачем).
@@ -17,6 +17,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Management;
 using System.Reflection;
 using System.Threading.Tasks;
@@ -56,13 +57,25 @@ namespace PhotoFrame
 
         private List<DiskError> _diskErrors      = new();
         private int             _currentErrorIdx = 0;
+        private HashSet<string> _dismissedPaths  = new(StringComparer.OrdinalIgnoreCase);
+        private DateTime        _lastTileUpdateUtc = DateTime.MinValue;
+
+        // Истинный простой системы — для скринсейвера из трея (см. OnIdleCheckTick)
+        private readonly DispatcherTimer _idleCheckTimer = new()
+            { Interval = TimeSpan.FromSeconds(20) };
+
+        // Автоотключение рамки по расписанию (умный/ручное/закат-рассвет)
+        private readonly AutoOffScheduler _autoOff = new();
+        private bool _autoOffHidden = false; // true, если окно скрыто расписанием (не вручную)
 
         public MainWindow()
         {
             InitializeComponent();
-            _slideTimer.Tick   += async (_, __) => await AdvanceAsync();
-            _hideTimer.Tick    += (_, __) => TryHideToolbar();
-            _counterTimer.Tick += (_, __) => HideCounter();
+            _slideTimer.Tick    += async (_, __) => await AdvanceAsync();
+            _hideTimer.Tick     += (_, __) => TryHideToolbar();
+            _counterTimer.Tick  += (_, __) => HideCounter();
+            _idleCheckTimer.Tick += OnIdleCheckTick;
+            _autoOff.ShouldBeActiveChanged += OnAutoOffShouldBeActiveChanged;
         }
 
         // ═══ LOADED ══════════════════════════════════════════════════════════════
@@ -74,6 +87,7 @@ namespace PhotoFrame
                 LiveTileService.SetAppUserModelId();
                 _engine = new TransitionEngine(ImgA, ImgB, RootGrid);
                 _cfg    = SettingsService.Load();
+                _dismissedPaths = SystemIntegration.LoadDismissedPaths();
 
                 // Window/app name only — no version number in UI (per user request)
                 TbTitleVersion.Text = "PhotoFrame";
@@ -92,6 +106,14 @@ namespace PhotoFrame
                 SystemIntegration.PreventSleep(_cfg.PreventSleep);
                 BuildTray();
                 StartRemovableWatcher();
+                _ = CheckForUpdatesIfDueAsync();
+
+                // Истинный простой системы (для скринсейвера из трея) и
+                // расписание автоотключения рамки — оба работают в фоне
+                // независимо от того, свёрнуто окно или нет.
+                _idleCheckTimer.Start();
+                _autoOff.Settings = _cfg;
+                _autoOff.Start();
 
                 if (App.StartMode == AppStartMode.Screensaver)
                 {
@@ -114,6 +136,12 @@ namespace PhotoFrame
 
                 // Re-apply icons now that playlist state (Count/CurrentIndex) is known
                 ApplyToolbarIcons();
+
+                // Win7/8: предложить установить Segoe MDL2 Assets. Никогда не
+                // показывается на Windows 10/11 (см. ShouldOfferMdl2Font).
+                if (App.StartMode == AppStartMode.Normal
+                    && SystemIntegration.ShouldOfferMdl2Font())
+                    await OfferMdl2FontInstallAsync();
             }
             catch (Exception ex)
             {
@@ -156,9 +184,15 @@ namespace PhotoFrame
 
             if (_lastScan.DiskErrors.Count > 0)
             {
-                _diskErrors      = _lastScan.DiskErrors;
+                // Не показываем баннер повторно для путей, которые пользователь
+                // уже закрыл крестиком (см. OnCloseDiskError) — до тех пор, пока
+                // они не вернутся в строй (т.е. перестанут встречаться в
+                // DiskErrors) или пользователь не очистит стоп-лист вручную.
+                _diskErrors = _lastScan.DiskErrors
+                    .Where(err => !_dismissedPaths.Contains(err.Path))
+                    .ToList();
                 _currentErrorIdx = 0;
-                ShowDiskError(_diskErrors[0]);
+                if (_diskErrors.Count > 0) ShowDiskError(_diskErrors[0]);
             }
 
             if (_lastScan.Photos.Count == 0) { ShowEmpty(); return; }
@@ -191,10 +225,44 @@ namespace PhotoFrame
             else
                 _engine?.ShowImmediate(bmp);
 
-            if (_cfg.LiveTilesEnabled) LiveTileService.UpdateTile(photo.FilePath);
+            // Live Tile: обновляем не на каждом фото, а по собственному интервалу
+            // (LiveTileCycleIntervalSeconds; 0 = синхронно с интервалом слайдшоу).
+            if (_cfg.LiveTilesEnabled)
+            {
+                int tileInt = _cfg.LiveTileCycleIntervalSeconds > 0
+                    ? _cfg.LiveTileCycleIntervalSeconds
+                    : Math.Max(1, _cfg.SlideshowIntervalSeconds);
+                if ((DateTime.UtcNow - _lastTileUpdateUtc).TotalSeconds >= tileInt)
+                { LiveTileService.UpdateTile(photo.FilePath, _cfg.TilePhotoDistance); _lastTileUpdateUtc = DateTime.UtcNow; }
+            }
+
+            // GPS reverse-геокодирование (опционально). Не блокирует показ фото —
+            // результат подставляется в оверлей асинхронно, если придёт ответ.
+            if (_cfg.GpsReverseGeocodeEnabled && photo.Latitude.HasValue
+                && photo.Longitude.HasValue && string.IsNullOrEmpty(photo.ResolvedLocationName))
+                _ = ResolveLocationAsync(photo);
 
             SyncCounter();
             ContextPopup.IsOpen = false;
+        }
+
+        /// <summary>
+        /// Асинхронно резолвит читаемое название места через ReverseGeocodeService
+        /// и обновляет оверлей, если это всё ещё текущее отображаемое фото
+        /// (защита от гонки при быстрой навигации вперёд/назад).
+        /// </summary>
+        private async Task ResolveLocationAsync(PhotoInfo photo)
+        {
+            try
+            {
+                string? name = await ReverseGeocodeService.ResolveAsync(
+                    photo.Latitude!.Value, photo.Longitude!.Value);
+                if (string.IsNullOrEmpty(name)) return;
+                photo.ResolvedLocationName = name;
+                if (ReferenceEquals(_playlist.Current, photo))
+                    Dispatcher.Invoke(() => UpdateOverlays(photo));
+            }
+            catch { /* сеть недоступна — остаются сырые координаты */ }
         }
 
         private static BitmapImage? LoadBitmapSafe(string path)
@@ -223,8 +291,8 @@ namespace PhotoFrame
             int photos = _lastScan?.Photos.Count ?? _playlist.Count;
             TbCounter.Text = _cfg.CounterDisplayFormat == CounterFormat.WithTotal
                 && _lastScan?.TotalFilesScanned > photos
-                ? $"{_playlist.CurrentIndex+1} / {photos}  [{_lastScan!.TotalFilesScanned} файлов]"
-                : $"{_playlist.CurrentIndex+1} / {photos}";
+                ? $"{_playlist.PlaybackPosition+1} / {photos}  [{_lastScan!.TotalFilesScanned} файлов]"
+                : $"{_playlist.PlaybackPosition+1} / {photos}";
 
             CounterBadge.Opacity = 1;
             _counterTimer.Stop();
@@ -350,9 +418,8 @@ namespace PhotoFrame
         {
             if (_cfg.UiMode == UiMode.Aero7)
             {
-                bool atStart = _playlist.CurrentIndex <= 0 && !_cfg.LoopSlideshow;
-                bool atEnd   = _playlist.CurrentIndex >= _playlist.Count - 1
-                               && !_cfg.LoopSlideshow;
+                bool atStart = _playlist.IsAtStart && !_cfg.LoopSlideshow;
+                bool atEnd   = _playlist.IsAtEnd   && !_cfg.LoopSlideshow;
                 bool noPhotos = _playlist.Count == 0;
 
                 // BtnPrev → Start* icon set (with Unavailable when at first photo)
@@ -552,6 +619,9 @@ namespace PhotoFrame
             _cfg.SelectedPaths.RemoveAll(p =>
                 p.StartsWith(err.Path, StringComparison.OrdinalIgnoreCase));
             SettingsService.Save(_cfg);
+            // Путь удалён насовсем — больше нет смысла держать его в стоп-листе
+            _dismissedPaths.Remove(err.Path);
+            SystemIntegration.SaveDismissedPaths(_dismissedPaths);
             _diskErrors.RemoveAt(_currentErrorIdx);
             if (_currentErrorIdx >= _diskErrors.Count) _currentErrorIdx = 0;
             if (_diskErrors.Count > 0) ShowDiskError(_diskErrors[_currentErrorIdx]);
@@ -560,6 +630,15 @@ namespace PhotoFrame
 
         private void OnCloseDiskError(object s, RoutedEventArgs e)
         {
+            // Закрытие крестиком ≠ удаление из источников: путь остаётся в
+            // SelectedPaths, но баннер для него больше не показывается при
+            // следующих запусках — пока он не вернётся в строй или пользователь
+            // не очистит стоп-лист вручную (см. SystemIntegration.ClearDismissedPaths).
+            if (_currentErrorIdx < _diskErrors.Count)
+            {
+                _dismissedPaths.Add(_diskErrors[_currentErrorIdx].Path);
+                SystemIntegration.SaveDismissedPaths(_dismissedPaths);
+            }
             _currentErrorIdx++;
             if (_currentErrorIdx < _diskErrors.Count) ShowDiskError(_diskErrors[_currentErrorIdx]);
             else DiskErrorBanner.Visibility = Visibility.Collapsed;
@@ -627,6 +706,51 @@ namespace PhotoFrame
 
         private void ShowFromTray() { Show(); WindowState=WindowState.Normal; Activate(); }
 
+        // ═══ АВТОПРОВЕРКА ОБНОВЛЕНИЙ (build 52) ═══════════════════════════════════
+        // Служба обновлений проверяет наличие новой версии НЕ чаще, чем раз в
+        // AppSettings.UpdateCheckPeriodDays — вместо проверки при каждом
+        // запуске (что при частых перезапусках приложения без надобности
+        // дёргает GitHub API/зеркало). Время последней проверки хранится в
+        // LastUpdateCheckUtc; таймстемп обновляется только при УСПЕШНОМ
+        // обращении к серверу — если сеть недоступна, следующая попытка
+        // будет предпринята при следующем запуске, а не только через N дней.
+        private async Task CheckForUpdatesIfDueAsync()
+        {
+            try
+            {
+                if (!_cfg.AutoCheckUpdatesEnabled) return;
+
+                DateTime? last = DateTime.TryParse(_cfg.LastUpdateCheckUtc,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.RoundtripKind, out var dt) ? dt : null;
+
+                int periodDays = Math.Max(1, _cfg.UpdateCheckPeriodDays);
+                if (last.HasValue && (DateTime.UtcNow - last.Value).TotalDays < periodDays) return;
+
+                var cur = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version ?? new Version(1, 0, 0, 0);
+                var (tag, isNewer) = await SystemIntegration.CheckUpdateAsync(cur, _cfg.UpdateMirrorUrl);
+                if (tag == null) return; // сервер недоступен — таймстемп не трогаем, повторим при следующем запуске
+
+                _cfg.LastUpdateCheckUtc = DateTime.UtcNow.ToString("o");
+                SettingsService.Save(_cfg);
+
+                if (isNewer && _tray != null)
+                {
+                    _tray.BalloonTipTitle = "Доступно обновление PhotoFrame";
+                    _tray.BalloonTipText  = $"Новая версия: {tag}. Нажмите, чтобы открыть страницу релизов.";
+                    _tray.BalloonTipIcon  = System.Windows.Forms.ToolTipIcon.Info;
+                    void OnClicked(object? s2, EventArgs e2)
+                    {
+                        SystemIntegration.OpenGitHub();
+                        if (_tray != null) _tray.BalloonTipClicked -= OnClicked;
+                    }
+                    _tray.BalloonTipClicked += OnClicked;
+                    _tray.ShowBalloonTip(8000);
+                }
+            }
+            catch { /* автопроверка не должна ронять приложение */ }
+        }
+
         // ═══ REMOVABLE MEDIA ═════════════════════════════════════════════════════
 
         private void StartRemovableWatcher()
@@ -687,6 +811,7 @@ namespace PhotoFrame
                     ApplyUiModeStyles();
                     ApplyBackdrop();
                     SystemIntegration.PreventSleep(_cfg.PreventSleep);
+                    _autoOff.Settings = _cfg; // подхватить новое расписание/режим
                     _slideTimer.Interval =
                         TimeSpan.FromSeconds(Math.Max(1, _cfg.SlideshowIntervalSeconds));
                     SyncIntervalLabel(); SyncPlayModeIcon();
@@ -742,6 +867,69 @@ namespace PhotoFrame
             SettingsService.Save(_cfg);
             if (_playing) _slideTimer.Interval=TimeSpan.FromSeconds(_cfg.SlideshowIntervalSeconds);
             SyncIntervalLabel();
+        }
+
+        // ═══ WIN7/8: SEGOE MDL2 FONT FALLBACK ════════════════════════════════════════
+        private async Task OfferMdl2FontInstallAsync()
+        {
+            var res = MessageBox.Show(
+                "На вашей Windows отсутствует шрифт значков Segoe MDL2 Assets (появился в Win10).\n" +
+                "Без него значки отображаются как квадраты.\n\n" +
+                "Да — скачать и установить (потребуется UAC)\n" +
+                "Нет — спросить в следующий раз\n" +
+                "Отмена — не предлагать больше никогда",
+                "PhotoFrame — отсутствует шрифт значков",
+                MessageBoxButton.YesNoCancel, MessageBoxImage.Information);
+            if (res == MessageBoxResult.Cancel)
+            { SystemIntegration.SetMdl2FontDeclinedForever(); return; }
+            if (res == MessageBoxResult.No) return;
+            bool ok = await SystemIntegration.DownloadAndInstallMdl2FontAsync();
+            MessageBox.Show(ok
+                ? "Шрифт установлен. Перезапустите PhotoFrame."
+                : "Не удалось. Скачайте вручную: https://archive.org/download/segmdl2/segmdl2.ttf",
+                "PhotoFrame", MessageBoxButton.OK,
+                ok ? MessageBoxImage.Information : MessageBoxImage.Warning);
+        }
+
+        // ═══ IDLE-AWARE SCREENSAVER (когда свёрнуто в трей) ════════════════════════
+        private void OnIdleCheckTick(object? sender, EventArgs e)
+        {
+            if (Visibility != Visibility.Hidden) return;
+            if (_cfg.ScreensaverDelayMinutes <= 0) return;
+            if (!SystemIntegration.IsSystemIdle(
+                    TimeSpan.FromMinutes(_cfg.ScreensaverDelayMinutes))) return;
+
+            Dispatcher.Invoke(() =>
+            {
+                Show();
+                WindowState = WindowState.Normal;
+                EnterFullscreen();
+                if (!_playing && _playlist.Count > 0) StartSlide();
+            });
+        }
+
+        // ═══ АВТООТКЛЮЧЕНИЕ РАМКИ ПО РАСПИСАНИЮ ════════════════════════════════════
+        private void OnAutoOffShouldBeActiveChanged(bool shouldBeActive)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                if (!shouldBeActive && _cfg.AutoOffMode != AutoOffMode.Disabled)
+                {
+                    if (IsVisible && Visibility != Visibility.Hidden)
+                    {
+                        _autoOffHidden = true;
+                        Hide();
+                        if (_playing) StopSlide();
+                    }
+                }
+                else if (shouldBeActive && _autoOffHidden)
+                {
+                    _autoOffHidden = false;
+                    Show();
+                    WindowState = WindowState.Normal;
+                    if (_cfg.AutoStart && !_playing && _playlist.Count > 0) StartSlide();
+                }
+            });
         }
 
         // ═══ TITLE BAR (custom — WindowStyle=None) ═══════════════════════════════
@@ -871,6 +1059,9 @@ namespace PhotoFrame
         {
             App.ThemeChanged -= OnThemeChanged;
             _slideTimer.Stop(); _hideTimer.Stop(); _counterTimer.Stop();
+            _idleCheckTimer.Stop();
+            _autoOff.ShouldBeActiveChanged -= OnAutoOffShouldBeActiveChanged;
+            _autoOff.Stop();
             _driveWatcher?.Stop(); _driveWatcher?.Dispose();
             SystemIntegration.PreventSleep(false);
             if (!_cfg.LiveTilesEnabled) LiveTileService.ClearTile();

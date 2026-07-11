@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Package/Package.appxmanifest — build 52 (v1.2.1.0)
+  © Очкин Артём, 2026
+
+  Манифест MSIX-упаковки для PhotoFrame. Используется двумя путями:
+
+  1) Visual Studio 2026 — "Windows Application Packaging Project" (.wapproj):
+     Файл > Добавить > Новый проект > "Windows Application Packaging Project",
+     затем в свойствах пакета указать этот файл как Package.appxmanifest,
+     а в узле "Applications" wapproj-проекта сослаться на PhotoFrame.csproj
+     как на основной исполняемый проект. Build > Create App Packages...
+     позволяет собрать .msix (для sideload) либо .msixbundle (для отправки
+     в Microsoft Store через Partner Center).
+
+  2) Командная строка (без VS, требуется Windows SDK):
+       dotnet publish PhotoFrame.csproj -c Release -r win-x64 -p:SelfContained=true ^
+           -p:PublishSingleFile=false -o Package\Layout
+       copy Package\Package.appxmanifest Package\Layout\AppxManifest.xml
+       xcopy /E /I Package\Assets Package\Layout\Assets
+       "%WindowsSdkDir%bin\<version>\x64\makeappx.exe" pack /d Package\Layout /p Output\PhotoFrame.msix
+       "%WindowsSdkDir%bin\<version>\x64\signtool.exe" sign /fd SHA256 /a Output\PhotoFrame.msix
+     (Подпись — самоподписанным сертификатом для sideload либо сертификатом
+     издателя Store перед публикацией; см. Package/README_MSIX.md.)
+
+  Идентичность (Identity/Publisher) — ЗАМЕНИТЬ на реальные значения из
+  Partner Center перед публикацией в Store; текущие — заглушка для sideload.
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  IgnorableNamespaces="uap rescap desktop">
+
+  <Identity
+    Name="ArtemITuser.PhotoFrame"
+    Publisher="CN=Ochkin Artyom"
+    Version="1.2.1.0"
+    ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>PhotoFrame — Фоторамка</DisplayName>
+    <PublisherDisplayName>Ochkin Artyom (ArtemITuser)</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+
+  <Resources>
+    <Resource Language="ru-ru" />
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Capabilities>
+    <Capability Name="internetClient" />
+    <!-- removableStorage: доступ к съёмным носителям (USB-фото, автодобавление источников) -->
+    <rescap:Capability Name="broadFileSystemAccess" />
+  </Capabilities>
+
+  <Applications>
+    <Application Id="PhotoFrame" Executable="PhotoFrame.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="PhotoFrame"
+        Description="Цифровая фоторамка для Windows 10/11 — слайдшоу, скринсейвер, автоотключение по расписанию."
+        BackgroundColor="#2F7FCC"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png">
+        <uap:DefaultTile
+          Wide310x150Logo="Assets\Wide310x150Logo.png"
+          Square310x310Logo="Assets\Square310x310Logo.png"
+          Square71x71Logo="Assets\Square71x71Logo.png"
+          ShortName="PhotoFrame">
+          <uap:ShowNameOnTiles>
+            <uap:ShowOn Tile="square150x150Logo"/>
+            <uap:ShowOn Tile="wide310x150Logo"/>
+            <uap:ShowOn Tile="square310x310Logo"/>
+          </uap:ShowNameOnTiles>
+        </uap:DefaultTile>
+        <uap:SplashScreen Image="Assets\SplashScreen.png" BackgroundColor="#2F7FCC"/>
+      </uap:VisualElements>
+      <Extensions>
+        <!-- Автозапуск через MSIX StartupTask — предпочтительнее HKCU\Run
+             при MSIX-установке: путь к apphost стабилен (в отличие от
+             ClickOnce), но, в отличие от обычного Run-ключа, требует явного
+             согласия пользователя (StartupTask появляется в
+             Диспетчере задач → вкладка "Автозагрузка" с возможностью
+             включить/выключить) — это ожидаемое и правильное поведение
+             для магазинных приложений. -->
+        <desktop:Extension Category="windows.startupTask" Executable="PhotoFrame.exe" EntryPoint="Windows.FullTrustApplication">
+          <desktop:StartupTask TaskId="PhotoFrameAutostart" Enabled="false" DisplayName="PhotoFrame"/>
+        </desktop:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+</Package>

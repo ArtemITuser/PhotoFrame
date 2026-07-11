@@ -253,8 +253,13 @@
                     </Button>
                 </StackPanel>
 
-                <!-- Центр: навигация — ColumnSpan=3 даёт истинный центр окна
-                     (левая и правая группы кнопок разной ширины). -->
+                <!-- Центр: навигация — Grid.ColumnSpan="3" даёт ИСТИННЫЙ центр
+                     всего окна (а не только средней "*" колонки). Левая группа
+                     (PlayMode+интервал ≈194px) и правая (Тема+Настройки+Экран
+                     ≈168px) не равны по ширине — при центрировании только
+                     в "*"-колонке навигация визуально съезжала на ~13px.
+                     Panel.ZIndex="1" гарантирует клики идут по кнопкам
+                     навигации, а не по боковым StackPanel под ними. -->
                 <StackPanel Grid.Column="0" Grid.ColumnSpan="3" Panel.ZIndex="1"
                             Orientation="Horizontal"
                             HorizontalAlignment="Center" VerticalAlignment="Center">

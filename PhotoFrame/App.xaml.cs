@@ -1,4 +1,4 @@
-// App.xaml.cs — v3.5
+// App.xaml.cs — v3.6 (build 52)
 using System;
 using System.Windows;
 using PhotoFrame.Helpers;
@@ -29,8 +29,17 @@ namespace PhotoFrame
                 ex.Handled = true;
             };
 
-            try { ApplyTheme(SettingsService.Load().Theme, notify: false); }
-            catch  { ApplyTheme(AppTheme.System, notify: false); }
+            try
+            {
+                var settings = SettingsService.Load();
+                ApplyTheme(settings.Theme, notify: false);
+                ApplyUiMode(settings.UiMode);
+            }
+            catch
+            {
+                ApplyTheme(AppTheme.System, notify: false);
+                ApplyUiMode(UiMode.Modern);
+            }
 
             if (StartMode == AppStartMode.Configure)
                 new Views.SettingsWindow(SettingsService.Load()).Show();
@@ -39,36 +48,49 @@ namespace PhotoFrame
         public static void ChangeTheme(AppTheme t) => ApplyTheme(t, notify: true);
 
         /// <summary>
-        /// Applies or removes AeroTheme overlay on top of CommonStyles.
-        /// AeroTheme overrides key styles (AccentButton, NavItem, Slider…) with
-        /// Aero7 glass variants. Removing it restores Modern (CommonStyles) defaults.
+        /// Применяет/снимает наложение AeroTheme (+ AeroDarkTheme при тёмной
+        /// цветовой схеме) поверх CommonStyles. Снятие обоих словарей
+        /// восстанавливает Modern-оформление по умолчанию.
         /// </summary>
         public static void ApplyUiMode(UiMode mode)
         {
-            var dicts = Current.Resources.MergedDictionaries;
-            const string aeroSource = "Themes/AeroTheme.xaml";
-
-            // Remove existing Aero entry (if any)
-            for (int i = dicts.Count - 1; i >= 0; i--)
-                if (dicts[i].Source?.OriginalString.EndsWith("AeroTheme.xaml",
-                    StringComparison.OrdinalIgnoreCase) == true)
-                {
-                    dicts.RemoveAt(i); break;
-                }
-
-            if (mode == UiMode.Aero7)
-            {
-                // Insert AFTER CommonStyles so Aero keys win via WPF lookup order
-                dicts.Add(new ResourceDictionary
-                    { Source = new Uri(aeroSource, UriKind.Relative) });
-            }
-
             CurrentUiMode = mode;
+            RefreshAeroOverlay();
             UiModeChanged?.Invoke(mode);
         }
 
         public static UiMode CurrentUiMode { get; private set; } = UiMode.Modern;
         public static event Action<UiMode>? UiModeChanged;
+
+        /// <summary>
+        /// Пересобирает стек Aero-словарей в соответствии с текущими
+        /// CurrentUiMode и CurrentTheme. AeroTheme.xaml задаёт структуру
+        /// (стеклянные шаблоны), AeroDarkTheme.xaml — переопределяет базовую
+        /// палитру и те стили, что были зашиты под светлое стекло, поэтому
+        /// он всегда добавляется ПОСЛЕ AeroTheme.xaml, чтобы выиграть в
+        /// порядке поиска ресурсов WPF.
+        /// </summary>
+        private static void RefreshAeroOverlay()
+        {
+            var dicts = Current.Resources.MergedDictionaries;
+            const string aeroSource     = "Themes/AeroTheme.xaml";
+            const string aeroDarkSource = "Themes/AeroDarkTheme.xaml";
+
+            for (int i = dicts.Count - 1; i >= 0; i--)
+            {
+                var src = dicts[i].Source?.OriginalString;
+                if (src != null && (src.EndsWith("AeroTheme.xaml", StringComparison.OrdinalIgnoreCase)
+                                  || src.EndsWith("AeroDarkTheme.xaml", StringComparison.OrdinalIgnoreCase)))
+                    dicts.RemoveAt(i);
+            }
+
+            if (CurrentUiMode == UiMode.Aero7)
+            {
+                dicts.Add(new ResourceDictionary { Source = new Uri(aeroSource, UriKind.Relative) });
+                if (CurrentTheme == AppTheme.Dark)
+                    dicts.Add(new ResourceDictionary { Source = new Uri(aeroDarkSource, UriKind.Relative) });
+            }
+        }
 
         private static void ApplyTheme(AppTheme requested, bool notify)
         {
@@ -85,8 +107,10 @@ namespace PhotoFrame
             bool replaced = false;
             for (int i = 0; i < dicts.Count; i++)
             {
-                if (dicts[i].Source?.OriginalString.EndsWith("Theme.xaml",
-                    StringComparison.OrdinalIgnoreCase) == true)
+                var src = dicts[i].Source?.OriginalString;
+                if (src != null && src.EndsWith("Theme.xaml", StringComparison.OrdinalIgnoreCase)
+                    && !src.EndsWith("AeroTheme.xaml", StringComparison.OrdinalIgnoreCase)
+                    && !src.EndsWith("AeroDarkTheme.xaml", StringComparison.OrdinalIgnoreCase))
                 {
                     dicts.Insert(i, new ResourceDictionary { Source = uri });
                     dicts.RemoveAt(i + 1);
@@ -94,7 +118,13 @@ namespace PhotoFrame
                 }
             }
             if (!replaced) dicts.Insert(0, new ResourceDictionary { Source = uri });
+
+            // Тема сменилась — Aero7-оверлей должен отреагировать (Light↔Dark),
+            // поэтому пересобираем его стек здесь же, а не только в ApplyUiMode.
+            RefreshAeroOverlay();
+
             if (notify) ThemeChanged?.Invoke(actual);
         }
     }
 }
+

@@ -1,0 +1,73 @@
+# .github/workflows/build-release.yml
+# Два параллельных канала на один тег v*:
+#   1. ClickOnce → gh-pages (авто-обновление у пользователей)
+#   2. InnoSetup .exe → GitHub Release (портативная установка)
+
+name: Build & Release
+
+on:
+  push:
+    tags: [ 'v*' ]
+
+permissions:
+  contents: write
+  pages:    write
+  id-token: write
+
+jobs:
+  clickonce:
+    name: ClickOnce → gh-pages
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - run: dotnet restore PhotoFrame.csproj
+      - name: Publish ClickOnce
+        run: |
+          dotnet publish PhotoFrame.csproj -c Release `
+            -p:PublishUrl="publish/" `
+            -p:InstallUrl="https://<user>.github.io/PhotoFrame/" `
+            -p:UpdateUrl="https://<user>.github.io/PhotoFrame/" `
+            -p:UpdateEnabled=true -p:UpdateMode=Foreground
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: publish/
+
+  deploy-pages:
+    name: Deploy gh-pages
+    needs: clickonce
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+  innosetup:
+    name: InnoSetup → GitHub Release
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Publish (framework-dependent, win-x64)
+        run: |
+          dotnet publish PhotoFrame.csproj -c Release -r win-x64 `
+            --self-contained false -o publish
+      - name: Install Inno Setup 6
+        run: choco install innosetup --yes
+      - name: Build installer
+        run: iscc "Installer.iss"
+      - name: Create GitHub Release & upload installer
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: PhotoFrame ${{ github.ref_name }}
+          body_path: CHANGELOG.md
+          files: Output/PhotoFrame_*_Setup.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

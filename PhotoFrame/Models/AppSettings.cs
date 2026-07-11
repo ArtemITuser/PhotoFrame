@@ -1,4 +1,4 @@
-// Models/AppSettings.cs — v4.1 (build 44 / v1.2.0.1)
+// Models/AppSettings.cs — v4.2 (build 52)
 
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
@@ -29,6 +29,28 @@ namespace PhotoFrame.Models
 
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public enum UiMode { Modern=0, Aero7=1 }
+
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public enum AutoOffMode { Disabled=0, SmartUsage=1, ManualSchedule=2, SunsetToSunrise=3 }
+
+    /// <summary>
+    /// Режим кадрирования фото для плиток Пуск (build 52). Плитки имеют
+    /// два разных соотношения сторон — квадрат (Small/Medium/Large) и
+    /// широкий формат 2.07:1 (Wide) — и без предварительного кадрирования
+    /// система обрезает/сжимает фото произвольно. "Дистанция" определяет,
+    /// насколько сильно приближается центр кадра при обрезке под квадрат/
+    /// широкий формат.
+    /// </summary>
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public enum TilePhotoDistance
+    {
+        /// <summary>Крупный план — плотная обрезка по центру (заметный зум).</summary>
+        Close = 0,
+        /// <summary>Сбалансированно — обрезка по центру без лишнего зума (по умолчанию).</summary>
+        Balanced = 1,
+        /// <summary>Целиком — всё фото видно, при необходимости с полями по краям.</summary>
+        Far = 2,
+    }
 
     public class AppSettings
     {
@@ -75,6 +97,9 @@ namespace PhotoFrame.Models
         /// </summary>
         public int  LiveTileCycleIntervalSeconds { get; set; } = 0;
 
+        /// <summary>Кадрирование фото под квадратные/широкие плитки (build 52).</summary>
+        public TilePhotoDistance TilePhotoDistance { get; set; } = TilePhotoDistance.Balanced;
+
         // ── System ───────────────────────────────────────────────────────────
         public bool MinimizeToTray          { get; set; } = true;
         public bool RegisterAsScreensaver   { get; set; } = false;
@@ -85,5 +110,42 @@ namespace PhotoFrame.Models
         public bool PreventSleep           { get; set; } = true;
         public int  MonitorOffAfterMinutes { get; set; } = 0;
         public int  SleepAfterMinutes      { get; set; } = 0;
+
+        // ── GPS / геокодирование ────────────────────────────────────────────
+        /// <summary>Определять название места (на русском) по GPS EXIF через интернет.</summary>
+        public bool GpsReverseGeocodeEnabled { get; set; } = false;
+
+        // ── Автоотключение рамки по расписанию (Ночной режим) ───────────────
+        public AutoOffMode AutoOffMode { get; set; } = AutoOffMode.Disabled;
+
+        /// <summary>Начало "тихого" окна в минутах от полуночи (режим ManualSchedule).</summary>
+        public int AutoOffFromMinutes { get; set; } = 23 * 60;      // 23:00
+        /// <summary>Конец "тихого" окна в минутах от полуночи (режим ManualSchedule).</summary>
+        public int AutoOffToMinutes   { get; set; } = 7 * 60;       // 07:00
+
+        /// <summary>Использовать вручную заданные координаты вместо IP-геолокации.</summary>
+        public bool    AutoOffUseManualCoords { get; set; } = false;
+        public double? AutoOffLatitude        { get; set; }
+        public double? AutoOffLongitude       { get; set; }
+
+        // ── Обновления: зеркало/своя ссылка/период проверки ─────────────────
+        /// <summary>
+        /// Пользовательский URL для проверки обновлений (формат GitHub
+        /// Releases API: JSON с полем tag_name). Пусто = использовать
+        /// официальный репозиторий GitHub по умолчанию.
+        /// </summary>
+        public string? UpdateMirrorUrl { get; set; }
+
+        /// <summary>Автоматически проверять обновления в фоне (build 52).</summary>
+        public bool AutoCheckUpdatesEnabled { get; set; } = true;
+
+        /// <summary>
+        /// Период автопроверки обновлений в днях. Служба проверяет не чаще
+        /// этого интервала — вместо проверки при каждом запуске приложения.
+        /// </summary>
+        public int UpdateCheckPeriodDays { get; set; } = 3;
+
+        /// <summary>UTC-время последней выполненной проверки обновлений (ISO 8601).</summary>
+        public string? LastUpdateCheckUtc { get; set; }
     }
 }

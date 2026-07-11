@@ -1,4 +1,4 @@
-// Converters/EnumDescriptionConverter.cs — v3.5
+// Converters/EnumDescriptionConverter.cs — v3.6 (build 52)
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -93,6 +93,35 @@ namespace PhotoFrame.Converters
             UiMode.Modern => "Modern (Windows 10/11 Fluent)",
             UiMode.Aero7  => "Aero7 (Windows 7 — экспериментально)",
             _             => v?.ToString() ?? ""
+        };
+        public object ConvertBack(object v, Type t, object p, CultureInfo c)
+            => throw new NotImplementedException();
+    }
+
+    [ValueConversion(typeof(AutoOffMode), typeof(string))]
+    public class AutoOffModeToStringConverter : IValueConverter
+    {
+        public object Convert(object v, Type t, object p, CultureInfo c) => v switch
+        {
+            AutoOffMode.Disabled        => "Выключено",
+            AutoOffMode.SmartUsage      => "Умный подсчёт использования",
+            AutoOffMode.ManualSchedule  => "Ручное расписание (от/до)",
+            AutoOffMode.SunsetToSunrise => "Автоматически: закат → рассвет",
+            _                           => v?.ToString() ?? ""
+        };
+        public object ConvertBack(object v, Type t, object p, CultureInfo c)
+            => throw new NotImplementedException();
+    }
+
+    [ValueConversion(typeof(TilePhotoDistance), typeof(string))]
+    public class TilePhotoDistanceToStringConverter : IValueConverter
+    {
+        public object Convert(object v, Type t, object p, CultureInfo c) => v switch
+        {
+            TilePhotoDistance.Close    => "Крупный план",
+            TilePhotoDistance.Balanced => "Сбалансированно",
+            TilePhotoDistance.Far      => "Целиком",
+            _                          => v?.ToString() ?? ""
         };
         public object ConvertBack(object v, Type t, object p, CultureInfo c)
             => throw new NotImplementedException();

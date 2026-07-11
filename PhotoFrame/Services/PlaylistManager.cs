@@ -76,8 +76,23 @@ namespace PhotoFrame.Services
 
         public int Count => _source.Count;
 
-        /// <summary>Текущий индекс в _source.</summary>
+        /// <summary>Индекс текущего фото в ИСХОДНОМ списке _source (не путать с
+        /// позицией в очереди воспроизведения!). Используется для JumpToSource.</summary>
         public int CurrentIndex => (_pos >= 0 && _pos < _order.Count) ? _order[_pos] : 0;
+
+        /// <summary>
+        /// Текущая ПОЗИЦИЯ в очереди воспроизведения (0-based) — то, что
+        /// нужно показывать в счётчике "N / всего", и для определения
+        /// начала/конца списка в Shuffle/Random режимах, где CurrentIndex
+        /// (индекс в исходном списке) НЕ совпадает с порядком показа.
+        /// </summary>
+        public int PlaybackPosition => _pos;
+
+        /// <summary>True, если сейчас показывается первое фото в очереди воспроизведения.</summary>
+        public bool IsAtStart => _pos <= 0;
+
+        /// <summary>True, если сейчас показывается последнее фото в очереди воспроизведения.</summary>
+        public bool IsAtEnd => _pos >= _order.Count - 1;
 
         /// <summary>Текущий объект PhotoInfo или null.</summary>
         public PhotoInfo? Current =>

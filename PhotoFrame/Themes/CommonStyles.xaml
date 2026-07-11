@@ -1,4 +1,4 @@
-<!-- Themes/CommonStyles.xaml — v3.5
+<!-- Themes/CommonStyles.xaml — v3.6 (build 52)
      Modern + Aero7 experimental styles. All DynamicResource colours.
      Touch: MinHeight≥40px, Stylus.IsFlicksEnabled=False on all interactive elements.
 -->
@@ -473,6 +473,148 @@
     <Style TargetType="ScrollViewer">
         <Setter Property="PanningMode"            Value="VerticalFirst"/>
         <Setter Property="Stylus.IsFlicksEnabled" Value="False"/>
+    </Style>
+
+    <!-- TextBox — build 52: раньше не имел собственного стиля и рендерился
+         системным белым полем ввода даже в тёмной теме. Фон/текст/рамка
+         теперь берутся из тех же InputBgBrush/InputFgBrush/InputBorderBrush,
+         что уже использует ComboBox — визуальная согласованность полей ввода. -->
+    <Style TargetType="TextBox">
+        <Setter Property="Background"                    Value="{DynamicResource InputBgBrush}"/>
+        <Setter Property="Foreground"                    Value="{DynamicResource InputFgBrush}"/>
+        <Setter Property="CaretBrush"                     Value="{DynamicResource InputFgBrush}"/>
+        <Setter Property="SelectionBrush"                 Value="{DynamicResource AccentBrush}"/>
+        <Setter Property="BorderBrush"                    Value="{DynamicResource InputBorderBrush}"/>
+        <Setter Property="BorderThickness"                Value="1"/>
+        <Setter Property="Padding"                        Value="7,5"/>
+        <Setter Property="MinHeight"                      Value="30"/>
+        <Setter Property="FontSize"                       Value="13"/>
+        <Setter Property="FontFamily"                     Value="Segoe UI"/>
+        <Setter Property="VerticalContentAlignment"       Value="Center"/>
+        <Setter Property="Stylus.IsFlicksEnabled"         Value="False"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TextBox">
+                    <Border x:Name="Bd" CornerRadius="4"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}">
+                        <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"
+                                      VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource AccentHoverBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                            <Setter TargetName="Bd" Property="BorderThickness" Value="2"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Bd" Property="Opacity" Value="0.5"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ScrollBar — build 52: раньше не имел стиля, рендерился системным
+         серым скроллбаром поверх тёмного фона. Дорожка/большой палец теперь
+         используют Surface2Brush/BorderBrush/AccentBrush текущей темы. -->
+    <Style x:Key="ThemedScrollBarThumb" TargetType="Thumb">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Thumb">
+                    <Border x:Name="Bd" CornerRadius="3"
+                            Background="{DynamicResource BorderBrush}" Margin="2"/>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AccentBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsDragging" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AccentPressBrush}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="ThemedScrollBarLineButton" TargetType="RepeatButton">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RepeatButton">
+                    <Border Background="{TemplateBinding Background}"/>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="ScrollBar">
+        <Setter Property="Background"    Value="{DynamicResource Surface2Brush}"/>
+        <Setter Property="Width"         Value="12"/>
+        <Setter Property="MinWidth"      Value="12"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ScrollBar">
+                    <Grid Background="{TemplateBinding Background}">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="0"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="0"/>
+                        </Grid.RowDefinitions>
+                        <Track x:Name="PART_Track" Grid.Row="1" IsDirectionReversed="True">
+                            <Track.DecreaseRepeatButton>
+                                <RepeatButton Style="{StaticResource ThemedScrollBarLineButton}"
+                                              Command="ScrollBar.PageUpCommand"/>
+                            </Track.DecreaseRepeatButton>
+                            <Track.IncreaseRepeatButton>
+                                <RepeatButton Style="{StaticResource ThemedScrollBarLineButton}"
+                                              Command="ScrollBar.PageDownCommand"/>
+                            </Track.IncreaseRepeatButton>
+                            <Track.Thumb>
+                                <Thumb Style="{StaticResource ThemedScrollBarThumb}" MinHeight="24"/>
+                            </Track.Thumb>
+                        </Track>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+        <Style.Triggers>
+            <Trigger Property="Orientation" Value="Horizontal">
+                <Setter Property="Height"    Value="12"/>
+                <Setter Property="MinHeight" Value="12"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ScrollBar">
+                            <Grid Background="{TemplateBinding Background}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="0"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="0"/>
+                                </Grid.ColumnDefinitions>
+                                <Track x:Name="PART_Track" Grid.Column="1">
+                                    <Track.DecreaseRepeatButton>
+                                        <RepeatButton Style="{StaticResource ThemedScrollBarLineButton}"
+                                                      Command="ScrollBar.PageLeftCommand"/>
+                                    </Track.DecreaseRepeatButton>
+                                    <Track.IncreaseRepeatButton>
+                                        <RepeatButton Style="{StaticResource ThemedScrollBarLineButton}"
+                                                      Command="ScrollBar.PageRightCommand"/>
+                                    </Track.IncreaseRepeatButton>
+                                    <Track.Thumb>
+                                        <Thumb Style="{StaticResource ThemedScrollBarThumb}" MinWidth="24"/>
+                                    </Track.Thumb>
+                                </Track>
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Trigger>
+        </Style.Triggers>
     </Style>
 
 </ResourceDictionary>
