@@ -1,4 +1,4 @@
-// Services/LiveTileService.cs — v5.0 (build 52)
+// Services/LiveTileService.cs — v6.0 (build 53)
 // Live Tiles via WinRT reflection. All 4 sizes with proper branding.
 // TryPinTileAsync() — requests tile pin dialog on Win10+.
 // IsPinningSupported() — gate for showing the pin button in Settings.
@@ -12,6 +12,34 @@
 // (TilePhotoDistance) — какую часть фото показывать при обрезке — и уже
 // ОНИ передаются в биндинги с корректным hint-crop="none" (кадрирование
 // уже выполнено нами, дополнительная обрезка системой не нужна).
+//
+// build 53 — исправление регистрации плиток:
+//  • GetUpdater() вызывал CreateTileUpdaterForApplication(AppId) со строкой
+//    "ArtemITuser.PhotoFrame", но Package.appxmanifest объявляет
+//    <Application Id="PhotoFrame">. Для WinRT-API это РАЗНЫЕ идентификаторы
+//    (перегрузка с id предназначена для пакетов с НЕСКОЛЬКИМИ Application-
+//    записями и ищет id ИМЕННО там) — при несовпадении обновление плитки
+//    тихо не находило нужное приложение. Теперь используется беспараметрный
+//    CreateTileUpdaterForApplication() — "текущее приложение пакета",
+//    корректно работающий для пакета с одной Application-записью независимо
+//    от того, как называется её Id.
+//  • TryPinTileAsync() создавал SecondaryTile через Activator.CreateInstance
+//    с ошибочными типами аргументов (строка там, где конструктору нужен
+//    Uri логотипа) — привязка конструктора по reflection не находила
+//    совпадения и всегда падала в catch, поэтому закрепление плитки не
+//    работало никогда. Переписано через SecondaryTile(tileId) +
+//    установку свойств (DisplayName/Arguments/VisualElements/DesiredSize)
+//    по отдельности — устойчивее к reflection, чем угадывание сигнатуры
+//    многоаргументного конструктора.
+//  • И то, и другое требует package identity (MSIX либо sparse-пакет) —
+//    IsPinningSupported() теперь дополнительно проверяет
+//    SystemIntegration.IsRunningAsMsixPackage(), а не только наличие
+//    WinRT-типов (те доступны в ОС независимо от identity, поэтому раньше
+//    кнопка закрепления показывалась даже там, где закрепить было
+//    физически невозможно — ClickOnce/InnoSetup).
+//  • AppSettings.LiveTilesLargeEnabled существовал, но нигде не
+//    использовался — теперь реально исключает биндинг TileLarge, когда
+//    выключен (см. UpdateTile/UpdateInternal).
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -33,14 +61,25 @@ namespace PhotoFrame.Services
         [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
         private static extern int SetCurrentProcessExplicitAppUserModelID(string id);
 
+        /// <summary>
+        /// Sets the process AUMID for unpackaged (ClickOnce/InnoSetup) runs so
+        /// taskbar grouping/jump lists behave correctly. Skipped when running
+        /// as an MSIX package: packaged processes get their AUMID from the
+        /// manifest's &lt;Application Id&gt; automatically, and explicitly
+        /// overriding it is documented to fail for packaged callers anyway.
+        /// </summary>
         public static void SetAppUserModelId()
-        { try { SetCurrentProcessExplicitAppUserModelID(AppId); } catch { } }
+        {
+            if (SystemIntegration.IsRunningAsMsixPackage()) return;
+            try { SetCurrentProcessExplicitAppUserModelID(AppId); } catch { }
+        }
 
-        public static TileUpdateResult UpdateTile(string imagePath, TilePhotoDistance distance = TilePhotoDistance.Balanced)
+        public static TileUpdateResult UpdateTile(string imagePath,
+            TilePhotoDistance distance = TilePhotoDistance.Balanced, bool largeEnabled = true)
         {
             if (string.IsNullOrEmpty(imagePath) || !File.Exists(imagePath))
                 return TileUpdateResult.NoPhoto;
-            try { return UpdateInternal(imagePath, distance) ? TileUpdateResult.Success : TileUpdateResult.NotSupported; }
+            try { return UpdateInternal(imagePath, distance, largeEnabled) ? TileUpdateResult.Success : TileUpdateResult.NotSupported; }
             catch { return TileUpdateResult.Error; }
         }
 
@@ -51,27 +90,70 @@ namespace PhotoFrame.Services
             CleanupTempCrops();
         }
 
+        /// <summary>
+        /// True only when tile pinning has a realistic chance of working:
+        /// the WinRT type must be resolvable (Windows 10+) AND the process
+        /// must have real package identity (MSIX/sparse package). Both
+        /// Windows.UI.StartScreen.SecondaryTile and Windows.UI.Notifications
+        /// require package identity to function — the type-existence check
+        /// alone (the old implementation) succeeds even for a plain
+        /// unpackaged ClickOnce/InnoSetup process, which used to show the
+        /// pin button somewhere it could never actually work.
+        /// </summary>
         public static bool IsPinningSupported()
         {
-            try { return Type.GetType(
-                "Windows.UI.StartScreen.SecondaryTile, Windows, ContentType=WindowsRuntime") != null; }
+            try
+            {
+                return SystemIntegration.IsRunningAsMsixPackage()
+                    && Type.GetType(
+                        "Windows.UI.StartScreen.SecondaryTile, Windows, ContentType=WindowsRuntime") != null;
+            }
             catch { return false; }
         }
 
         public static async Task<bool> TryPinTileAsync()
         {
+            if (!SystemIntegration.IsRunningAsMsixPackage()) return false;
             try
             {
                 var t = Type.GetType(
                     "Windows.UI.StartScreen.SecondaryTile, Windows, ContentType=WindowsRuntime");
-                if (t == null) return false;
                 var sizeType = Type.GetType(
                     "Windows.UI.StartScreen.TileSize, Windows, ContentType=WindowsRuntime");
-                if (sizeType == null) return false;
-                var tile = Activator.CreateInstance(t,
-                    AppId, "PhotoFrame", "photoframe-tile", AppId,
-                    Enum.Parse(sizeType, "Wide310x150"));
+                if (t == null || sizeType == null) return false;
+
+                // SecondaryTile(string tileId) + property setters. Deliberately
+                // NOT using the multi-arg constructor overload here: binding a
+                // constructor by reflection requires every argument's runtime
+                // type to match exactly, and a previous version of this method
+                // passed a string where the API expects a Uri, which silently
+                // failed to bind and made pinning a no-op. Setting properties
+                // individually degrades gracefully if any single one is
+                // missing/renamed on a given OS build instead of failing the
+                // whole call.
+                var tile = Activator.CreateInstance(t, "photoframe-tile");
                 if (tile == null) return false;
+
+                t.GetProperty("DisplayName")?.SetValue(tile, "PhotoFrame");
+                t.GetProperty("Arguments")?.SetValue(tile, "photoframe-tile");
+
+                var visualElements = t.GetProperty("VisualElements")?.GetValue(tile);
+                if (visualElements != null)
+                {
+                    var ve = visualElements.GetType();
+                    ve.GetProperty("Square150x150Logo")?.SetValue(visualElements,
+                        new Uri("ms-appx:///Assets/Square150x150Logo.png"));
+                    ve.GetProperty("Wide310x150Logo")?.SetValue(visualElements,
+                        new Uri("ms-appx:///Assets/Wide310x150Logo.png"));
+                    ve.GetProperty("Square44x44Logo")?.SetValue(visualElements,
+                        new Uri("ms-appx:///Assets/Square44x44Logo.png"));
+                    ve.GetProperty("ShowNameOnSquare150x150Logo")?.SetValue(visualElements, true);
+                    ve.GetProperty("ShowNameOnWide310x150Logo")?.SetValue(visualElements, true);
+                }
+
+                var desiredSize = Enum.Parse(sizeType, "Wide310x150");
+                t.GetProperty("DesiredSize")?.SetValue(tile, desiredSize);
+
                 var op = t.GetMethod("RequestCreateAsync", Type.EmptyTypes)?.Invoke(tile, null);
                 if (op == null) return false;
                 var task = op.GetType().GetMethod("AsTask", Type.EmptyTypes)?.Invoke(op, null) as Task<bool>;
@@ -80,7 +162,7 @@ namespace PhotoFrame.Services
             catch { return false; }
         }
 
-        private static bool UpdateInternal(string imagePath, TilePhotoDistance distance)
+        private static bool UpdateInternal(string imagePath, TilePhotoDistance distance, bool largeEnabled)
         {
             var mgr = GetUpdater(); if (mgr == null) return false;
 
@@ -92,6 +174,21 @@ namespace PhotoFrame.Services
 
             string squareUri = "file:///" + squareFile.Replace('\\', '/');
             string wideUri   = "file:///" + wideFile.Replace('\\', '/');
+
+            // TileLarge — необязательный биндинг (build 53: реально читает
+            // AppSettings.LiveTilesLargeEnabled, раньше настройка нигде не
+            // применялась). Small/Medium/Wide остаются всегда, т.к. явного
+            // запроса на их отключение не было. Примечание: Windows на
+            // некоторых версиях всё равно показывает на TileSmall (71×71)
+            // только значок приложения, игнорируя пользовательское фоновое
+            // изображение — это ограничение самой ОС, а не этого кода.
+            string largeBinding = largeEnabled ? $@"
+    <binding template=""TileLarge"">
+      <image src=""{squareUri}"" placement=""background"" hint-crop=""none""/>
+      <group><subgroup hint-weight=""1"">
+        <text hint-style=""baseSubtle"" hint-align=""center"">PhotoFrame</text>
+      </subgroup></group>
+    </binding>" : "";
 
             string xml = $@"<tile>
   <visual version=""4"" branding=""nameAndLogo"" displayName=""PhotoFrame"">
@@ -106,13 +203,7 @@ namespace PhotoFrame.Services
       <group><subgroup hint-weight=""1"">
         <text hint-style=""captionSubtle"" hint-align=""left"">PhotoFrame</text>
       </subgroup></group>
-    </binding>
-    <binding template=""TileLarge"">
-      <image src=""{squareUri}"" placement=""background"" hint-crop=""none""/>
-      <group><subgroup hint-weight=""1"">
-        <text hint-style=""baseSubtle"" hint-align=""center"">PhotoFrame</text>
-      </subgroup></group>
-    </binding>
+    </binding>{largeBinding}
   </visual>
 </tile>";
             var doc = LoadXml(xml); if (doc == null) return false;
@@ -210,8 +301,14 @@ namespace PhotoFrame.Services
         {
             var t = Type.GetType(
                 "Windows.UI.Notifications.TileUpdateManager, Windows, ContentType=WindowsRuntime");
-            return t?.GetMethod("CreateTileUpdaterForApplication", new[] { typeof(string) })
-                    ?.Invoke(null, new object[] { AppId });
+            // Parameterless overload = "the calling package's own application".
+            // The string-Id overload only matters for a package that declares
+            // MULTIPLE <Application> entries and needs to pick one by its
+            // manifest Id — this project has exactly one, so the parameterless
+            // form is both simpler and immune to Id-string mismatches against
+            // Package.appxmanifest.
+            return t?.GetMethod("CreateTileUpdaterForApplication", Type.EmptyTypes)
+                    ?.Invoke(null, null);
         }
 
         private static object? LoadXml(string xml)

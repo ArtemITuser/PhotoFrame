@@ -1,7 +1,19 @@
-# .github/workflows/build-release.yml
+# .github/workflows/build-release.yml — build 53
 # Два параллельных канала на один тег v*:
 #   1. ClickOnce → gh-pages (авто-обновление у пользователей)
-#   2. InnoSetup .exe → GitHub Release (портативная установка)
+#   2. InnoSetup .exe (x86 + x64) → GitHub Release (портативная установка)
+#
+# build 53 — исправлено несовпадение путей публикации:
+#   Раньше InnoSetup-джоб публиковал через `-r win-x64 --self-contained false
+#   -o publish` (в папку publish/ у корня репозитория), а Installer.iss читал
+#   PublishDir = bin\Release\net8.0-windows10.0.19041.0\publish\ — ДРУГОЙ
+#   путь. При последовательном запуске (checkout → publish → iscc) сборщик
+#   установщика либо не находил файлов вовсе, либо мог захватить случайно
+#   оставшуюся в bin\ от прошлого локального запуска версию. Теперь публикация
+#   идёт БЕЗ явного -o (стандартная раскладка dotnet publish -r <rid> —
+#   bin\Release\<tfm>\<rid>\publish\), той же, что использует
+#   Properties/PublishProfiles/FolderProfile.x86.pubxml и .x64.pubxml
+#   локально — один и тот же путь что в CI, что на машине разработчика.
 
 name: Build & Release
 
@@ -28,8 +40,8 @@ jobs:
         run: |
           dotnet publish PhotoFrame.csproj -c Release `
             -p:PublishUrl="publish/" `
-            -p:InstallUrl="https://<user>.github.io/PhotoFrame/" `
-            -p:UpdateUrl="https://<user>.github.io/PhotoFrame/" `
+            -p:InstallUrl="https://artemituser.github.io/PhotoFrame/" `
+            -p:UpdateUrl="https://artemituser.github.io/PhotoFrame/" `
             -p:UpdateEnabled=true -p:UpdateMode=Foreground
       - uses: actions/upload-pages-artifact@v3
         with:
@@ -49,25 +61,90 @@ jobs:
   innosetup:
     name: InnoSetup → GitHub Release
     runs-on: windows-latest
+    strategy:
+      matrix:
+        arch: [x86, x64]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-      - name: Publish (framework-dependent, win-x64)
+      - name: Publish (self-contained, win-${{ matrix.arch }})
         run: |
-          dotnet publish PhotoFrame.csproj -c Release -r win-x64 `
-            --self-contained false -o publish
+          dotnet publish PhotoFrame.csproj -c Release -p:PublishProfile=FolderProfile.${{ matrix.arch }}
       - name: Install Inno Setup 6
         run: choco install innosetup --yes
       - name: Build installer
-        run: iscc "Installer.iss"
-      - name: Create GitHub Release & upload installer
+        run: iscc "/DAppArch=${{ matrix.arch }}" "Installer.iss"
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.arch }}
+          path: Output/PhotoFrame_*_Setup.exe
+
+  msix:
+    name: MSIX(bundle) → GitHub Release (optional, best-effort)
+    runs-on: windows-latest
+    # build 55: третий, ДОПОЛНИТЕЛЬНЫЙ канал наравне с ClickOnce/InnoSetup —
+    # см. PhotoFrame.Package.wapproj и Package\README_MSIX.md. continue-on-
+    # error здесь и отсутствие "needs:" у release ниже — намеренно: сборка
+    # MSIX через MSBuild/.wapproj в CI устроена тоньше локальной сборки в
+    # VS2026 (нет прямого доступа к Configuration Manager решения — платформа
+    # передаётся через /p:Platform у MSBuild) — если этот джоб когда-либо
+    # начнёт падать, ОСНОВНЫЕ каналы (ClickOnce/InnoSetup) не должны от этого
+    # пострадать. Локальная сборка в VS2026 (Package\README_MSIX.md) остаётся
+    # основным, проверенным способом получить MSIX уже сейчас.
+    continue-on-error: true
+    strategy:
+      matrix:
+        arch: [x86, x64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Add msbuild to PATH
+        uses: microsoft/setup-msbuild@v2
+      - name: Restore
+        run: msbuild PhotoFrame.sln /t:Restore /p:Configuration=Release /p:Platform=${{ matrix.arch }}
+      - name: Build MSIX package
+        run: msbuild PhotoFrame.Package.wapproj /p:Configuration=Release /p:Platform=${{ matrix.arch }} /p:AppxBundle=Never /p:UapAppxPackageBuildMode=SideloadOnly /p:AppxPackageSigningEnabled=false
+      - name: Upload MSIX artifact
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: msix-${{ matrix.arch }}
+          path: |
+            PhotoFrame.Package/AppPackages/**/*.msix
+            PhotoFrame.Package/AppPackages/**/*.msixbundle
+          if-no-files-found: ignore
+
+  release:
+    name: Create GitHub Release
+    needs: innosetup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: installer-*
+          path: Output
+          merge-multiple: true
+      - name: Download MSIX artifacts if the optional job produced any
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: msix-*
+          path: Output
+          merge-multiple: true
+      - name: Create GitHub Release & upload installers
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: PhotoFrame ${{ github.ref_name }}
           body_path: CHANGELOG.md
-          files: Output/PhotoFrame_*_Setup.exe
+          files: |
+            Output/PhotoFrame_*_Setup.exe
+            Output/**/*.msix
+            Output/**/*.msixbundle
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

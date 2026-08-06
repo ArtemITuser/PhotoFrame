@@ -1,4 +1,4 @@
-// MainWindow.xaml.cs — v3.7 (build 52)
+// MainWindow.xaml.cs — v3.8 (build 53)
 //
 // TOUCH ARCHITECTURE:
 //   • Кнопки тулбара — стандартный Click (работает и мышью, и тачем).
@@ -13,6 +13,13 @@
 // FULLSCREEN:
 //   WindowStyle остаётся None всегда (AllowsTransparency требует этого).
 //   Fullscreen = WindowState.Maximized + TitleBar скрыт.
+//
+// build 53 — сон/пробуждение и сохранение состояния (см. секцию SLEEP /
+// RESUME и AppSettings.RestoreLastSessionState/WasFullscreen/WasPlaying):
+// подписка на SystemEvents.PowerModeChanged сохраняет состояние перед сном
+// и мягко "подталкивает" визуальный слой после пробуждения; при следующем
+// запуске полноэкранный режим и воспроизведение восстанавливаются, если
+// были активны в прошлом сеансе.
 
 using System;
 using System.Collections.Generic;
@@ -101,6 +108,12 @@ namespace PhotoFrame
                 RefreshDwmTheme();
                 App.ThemeChanged += OnThemeChanged;
 
+                // build 53: реагируем на сон/пробуждение системы — см.
+                // OnPowerModeChanged. Симметрично отписывается в OnClosing,
+                // как и App.ThemeChanged выше (оба — статические источники
+                // событий уровня процесса/ОС).
+                Microsoft.Win32.SystemEvents.PowerModeChanged += OnPowerModeChanged;
+
                 ApplyBackdrop();
 
                 SystemIntegration.PreventSleep(_cfg.PreventSleep);
@@ -120,6 +133,12 @@ namespace PhotoFrame
                     EnterFullscreen();
                     _hideTimer.Start();
                 }
+                else if (_cfg.RestoreLastSessionState && _cfg.WasFullscreen)
+                {
+                    // build 53: восстановление полноэкранного режима после
+                    // сна/перезапуска (см. AppSettings.RestoreLastSessionState).
+                    EnterFullscreen();
+                }
 
                 // Apply Aero7 icons if mode set
                 ApplyToolbarIcons();
@@ -133,6 +152,16 @@ namespace PhotoFrame
                     await ReloadPhotosAsync();
                 else
                     ShowEmpty();
+
+                // build 53: восстановление воспроизведения после сна/перезапуска.
+                // Проверяется ПОСЛЕ ReloadPhotosAsync (которая уже могла
+                // запустить слайд-шоу через AutoStart) и только один раз, на
+                // старте — не переоткрывает слайд-шоу при последующих
+                // пересканированиях в течение того же сеанса (например, после
+                // подключения флешки), чтобы не перезапускать то, что
+                // пользователь мог намеренно поставить на паузу.
+                if (!_playing && _cfg.RestoreLastSessionState && _cfg.WasPlaying && _playlist.Count > 0)
+                    StartSlide();
 
                 // Re-apply icons now that playlist state (Count/CurrentIndex) is known
                 ApplyToolbarIcons();
@@ -178,7 +207,8 @@ namespace PhotoFrame
 
             _lastScan = await FileScanner.ScanAsync(
                 _cfg.SelectedPaths, _cfg.IncludeSubdirectories,
-                p => Dispatcher.InvokeAsync(() => TbScanPath.Text = p));
+                p => Dispatcher.InvokeAsync(() => TbScanPath.Text = p),
+                _cfg.RemovableSourcePaths);
 
             ScanPanel.Visibility = Visibility.Collapsed;
 
@@ -233,7 +263,10 @@ namespace PhotoFrame
                     ? _cfg.LiveTileCycleIntervalSeconds
                     : Math.Max(1, _cfg.SlideshowIntervalSeconds);
                 if ((DateTime.UtcNow - _lastTileUpdateUtc).TotalSeconds >= tileInt)
-                { LiveTileService.UpdateTile(photo.FilePath, _cfg.TilePhotoDistance); _lastTileUpdateUtc = DateTime.UtcNow; }
+                {
+                    LiveTileService.UpdateTile(photo.FilePath, _cfg.TilePhotoDistance, _cfg.LiveTilesLargeEnabled);
+                    _lastTileUpdateUtc = DateTime.UtcNow;
+                }
             }
 
             // GPS reverse-геокодирование (опционально). Не блокирует показ фото —
@@ -330,10 +363,14 @@ namespace PhotoFrame
         {
             _slideTimer.Interval = TimeSpan.FromSeconds(Math.Max(1, _cfg.SlideshowIntervalSeconds));
             _slideTimer.Start(); _playing = true; SyncPlayIcon();
+            _cfg.WasPlaying = true; // build 53: для восстановления состояния после сна/перезапуска
         }
 
         private void StopSlide()
-        { _slideTimer.Stop(); _playing = false; SyncPlayIcon(); }
+        {
+            _slideTimer.Stop(); _playing = false; SyncPlayIcon();
+            _cfg.WasPlaying = false;
+        }
 
         // ═══ TOOLBAR SHOW/HIDE ═══════════════════════════════════════════════════
 
@@ -371,6 +408,7 @@ namespace PhotoFrame
             TbFullscreenIcon.Text  = "\uE741";
             TbFullscreenLabel.Text = "Окно";
             _hideTimer.Start();
+            _cfg.WasFullscreen = true; // build 53: для восстановления состояния после сна/перезапуска
         }
 
         private void ExitFullscreen()
@@ -385,6 +423,44 @@ namespace PhotoFrame
             Toolbar.Visibility     = Visibility.Visible;
             TbFullscreenIcon.Text  = "\uE740";
             TbFullscreenLabel.Text = "Экран";
+            _cfg.WasFullscreen = false;
+        }
+
+        // ═══ SLEEP / RESUME (build 53) ══════════════════════════════════════════
+        //
+        // Windows обычно просто приостанавливает процесс на время сна и
+        // возобновляет его без изменений — состояние в памяти (_playing,
+        // _fullscreen, текущее фото) само по себе переживает сон. Два
+        // отдельных, но связанных риска, которые эта секция закрывает:
+        //  1) WPF-поток композиции иногда спотыкается сразу после
+        //     возобновления (см. App.OnDispatcherUnhandledException /
+        //     UCEERR_RENDERTHREADFAILURE) — событие Resume даёт шанс
+        //     "подтолкнуть" визуальный слой ПОСЛЕ того как графическая
+        //     подсистема действительно восстановилась, а не сразу.
+        //  2) Если процесс всё же не переживёт переход (редко, но
+        //     теоретически возможно — сторонний сбой, принудительное
+        //     завершение и т.п.), состояние Fullscreen/Playing уже
+        //     сохранено на диск ДО фактического ухода в сон и будет
+        //     восстановлено при следующем запуске (см. OnLoaded).
+        private void OnPowerModeChanged(object? sender, Microsoft.Win32.PowerModeChangedEventArgs e)
+        {
+            if (e.Mode == Microsoft.Win32.PowerModes.Suspend)
+            {
+                try { SettingsService.Save(_cfg); } catch { /* не критично — состояние переживёт сон и в памяти */ }
+            }
+            else if (e.Mode == Microsoft.Win32.PowerModes.Resume)
+            {
+                _ = Dispatcher.InvokeAsync(async () =>
+                {
+                    // Небольшая пауза перед обращением к визуальному дереву —
+                    // даёт видеодрайверу/DWM время окончательно восстановиться
+                    // после resume, снижая (но не гарантированно исключая)
+                    // шанс поймать транзиентный сбой потока композиции; сам
+                    // сбой в любом случае перехвачен на уровне приложения.
+                    await Task.Delay(1200);
+                    try { InvalidateVisual(); } catch { /* см. App.xaml.cs — перехватывается глобально */ }
+                });
+            }
         }
 
         // ═══ THEME ═══════════════════════════════════════════════════════════════
@@ -618,6 +694,10 @@ namespace PhotoFrame
                 != MessageBoxResult.Yes) return;
             _cfg.SelectedPaths.RemoveAll(p =>
                 p.StartsWith(err.Path, StringComparison.OrdinalIgnoreCase));
+            // build 53: путь удалён насовсем — снимаем и метку "съёмный",
+            // иначе она бы бессмысленно копилась в настройках.
+            _cfg.RemovableSourcePaths.RemoveAll(p =>
+                p.StartsWith(err.Path, StringComparison.OrdinalIgnoreCase));
             SettingsService.Save(_cfg);
             // Путь удалён насовсем — больше нет смысла держать его в стоп-листе
             _dismissedPaths.Remove(err.Path);
@@ -737,11 +817,19 @@ namespace PhotoFrame
                 if (isNewer && _tray != null)
                 {
                     _tray.BalloonTipTitle = "Доступно обновление PhotoFrame";
-                    _tray.BalloonTipText  = $"Новая версия: {tag}. Нажмите, чтобы открыть страницу релизов.";
+                    // build 55: раньше клик по баллуну просто открывал корень
+                    // репозитория в браузере — теперь сразу открывает
+                    // Настройки → «Обновления», где для InnoSetup/MSIX есть
+                    // кнопка «Скачать и установить» (см. SystemIntegration.
+                    // Updates.cs / OnInstallUpdate). Для ClickOnce обновление
+                    // и так произойдёт само — текст баллуна это отражает.
+                    _tray.BalloonTipText  = SystemIntegration.DetectInstallChannel() == InstallChannel.ClickOnce
+                        ? $"Новая версия: {tag}. Обновится автоматически при следующем запуске."
+                        : $"Новая версия: {tag}. Нажмите, чтобы открыть Настройки и установить.";
                     _tray.BalloonTipIcon  = System.Windows.Forms.ToolTipIcon.Info;
                     void OnClicked(object? s2, EventArgs e2)
                     {
-                        SystemIntegration.OpenGitHub();
+                        OpenSettings();
                         if (_tray != null) _tray.BalloonTipClicked -= OnClicked;
                     }
                     _tray.BalloonTipClicked += OnClicked;
@@ -782,8 +870,15 @@ namespace PhotoFrame
                             == MessageBoxResult.Yes)
                         {
                             foreach (var d in removable)
-                                if (!_cfg.SelectedPaths.Contains(d.RootDirectory.FullName))
-                                    _cfg.SelectedPaths.Add(d.RootDirectory.FullName);
+                            {
+                                string root = d.RootDirectory.FullName;
+                                if (!_cfg.SelectedPaths.Contains(root))
+                                    _cfg.SelectedPaths.Add(root);
+                                // build 53: помечаем как съёмный источник —
+                                // см. AppSettings.RemovableSourcePaths.
+                                if (!_cfg.RemovableSourcePaths.Contains(root))
+                                    _cfg.RemovableSourcePaths.Add(root);
+                            }
                             SettingsService.Save(_cfg);
                             await ReloadPhotosAsync();
                         }
@@ -1058,6 +1153,7 @@ namespace PhotoFrame
         private void OnClosing(object s, System.ComponentModel.CancelEventArgs e)
         {
             App.ThemeChanged -= OnThemeChanged;
+            Microsoft.Win32.SystemEvents.PowerModeChanged -= OnPowerModeChanged;
             _slideTimer.Stop(); _hideTimer.Stop(); _counterTimer.Stop();
             _idleCheckTimer.Stop();
             _autoOff.ShouldBeActiveChanged -= OnAutoOffShouldBeActiveChanged;

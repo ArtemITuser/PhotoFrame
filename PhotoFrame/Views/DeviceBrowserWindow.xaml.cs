@@ -1,9 +1,17 @@
-// Views/DeviceBrowserWindow.xaml.cs — v1.0 (build 52)
+// Views/DeviceBrowserWindow.xaml.cs — v1.1 (build 53)
 //
 // Показывает дерево подключённых USB-устройств (Lumia/Android/iOS) через
 // DeviceBrowserService (Shell.Application COM). Пользователь выбирает
 // папку — импорт копирует фото в локальный кеш, после чего этот путь
 // можно добавить в источники PhotoFrame как обычную папку.
+//
+// build 53: КАЖДЫЙ узел дерева (не только устройство верхнего уровня)
+// раскрывается лениво через один и тот же OnTreeItemExpanded, запрашивая
+// у DeviceBrowserService.GetChildren() только ОДИН уровень за раз — так
+// же, как раньше раскрывался только первый уровень. Глубина вложенности
+// больше не ограничена константой (было maxDepth: 3): пользователь может
+// зайти настолько глубоко, насколько устроена файловая структура
+// конкретного телефона, как в обычном проводнике.
 
 using System;
 using System.Threading;
@@ -21,6 +29,8 @@ namespace PhotoFrame.Views
 
         private DeviceNode? _selectedFolder;
         private CancellationTokenSource? _importCts;
+
+        private const string LoadingLabel = "Загрузка…";
 
         public DeviceBrowserWindow()
         {
@@ -61,53 +71,52 @@ namespace PhotoFrame.Views
                     DeviceKind.WindowsMobile => "\uE8EA", // Phone
                     DeviceKind.Android       => "\uE8EA",
                     DeviceKind.Apple         => "\uE8EA",
+                    DeviceKind.Camera        => "\uE722", // Camera (build 56)
                     _                        => "\uE88E", // USB generic
                 };
 
-                var item = new TreeViewItem
-                {
-                    Header = MakeHeader(icon, device.Name),
-                    Tag    = device,
-                    FontFamily = new System.Windows.Media.FontFamily("Segoe UI")
-                };
-                // Placeholder — раскрывается лениво при первом Expand
-                item.Items.Add(new TreeViewItem { Header = "Загрузка…" });
-                item.Expanded += OnDeviceExpanded;
-                DeviceTree.Items.Add(item);
+                DeviceTree.Items.Add(BuildLazyTreeItem(device, icon));
             }
         }
 
-        private async void OnDeviceExpanded(object sender, RoutedEventArgs e)
+        /// <summary>
+        /// Создаёт TreeViewItem для узла (устройство ИЛИ вложенная папка) с
+        /// плейсхолдером "Загрузка…" и подпиской на ленивое раскрытие.
+        /// Используется единообразно на ЛЮБОЙ глубине — в отличие от build
+        /// 52, где ленивое раскрытие работало только для узлов верхнего
+        /// уровня, а всё дерево ниже строилось заранее и обрывалось на
+        /// фиксированной глубине.
+        /// </summary>
+        private TreeViewItem BuildLazyTreeItem(DeviceNode node, string icon)
         {
-            if (sender is not TreeViewItem item || item.Tag is not DeviceNode device) return;
+            var item = new TreeViewItem
+            {
+                Header     = MakeHeader(icon, node.Name),
+                Tag        = node,
+                FontFamily = new System.Windows.Media.FontFamily("Segoe UI")
+            };
+            item.Items.Add(new TreeViewItem { Header = LoadingLabel });
+            item.Expanded += OnTreeItemExpanded;
+            return item;
+        }
+
+        private async void OnTreeItemExpanded(object sender, RoutedEventArgs e)
+        {
+            if (sender is not TreeViewItem item || item.Tag is not DeviceNode node) return;
             if (item.Items.Count != 1 || item.Items[0] is not TreeViewItem ph
-                || ph.Header?.ToString() != "Загрузка…") return; // уже раскрыто
+                || ph.Header?.ToString() != LoadingLabel) return; // уже раскрыто — второй Expanded не перезагружает
 
             item.Items.Clear();
-            var tree = await Task.Run(() => DeviceBrowserService.GetDeviceTree(device, maxDepth: 3));
-            if (tree == null || tree.Children.Count == 0)
+            var children = await Task.Run(() => DeviceBrowserService.GetChildren(node));
+
+            if (children.Count == 0)
             {
                 item.Items.Add(new TreeViewItem { Header = "(папки не найдены)", IsEnabled = false });
                 return;
             }
 
-            foreach (var child in tree.Children)
-                item.Items.Add(BuildTreeItem(child));
-        }
-
-        private TreeViewItem BuildTreeItem(DeviceNode node)
-        {
-            var item = new TreeViewItem
-            {
-                Header = MakeHeader("\uE8B7", node.Name), // Folder icon
-                Tag    = node
-            };
-            if (node.Children.Count > 0)
-                foreach (var child in node.Children)
-                    item.Items.Add(BuildTreeItem(child));
-            else
-                item.Items.Add(new TreeViewItem { Header = "" }); // разрешает раскрытие ленивого дерева
-            return item;
+            foreach (var child in children)
+                item.Items.Add(BuildLazyTreeItem(child, "\uE8B7")); // Folder icon
         }
 
         private static StackPanel MakeHeader(string glyph, string text)

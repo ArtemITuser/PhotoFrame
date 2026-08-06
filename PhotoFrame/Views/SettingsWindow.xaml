@@ -1,4 +1,4 @@
-<!-- Views/SettingsWindow.xaml — v3.5
+<!-- Views/SettingsWindow.xaml — v3.6 (build 53)
      WindowStyle="SingleBorderWindow" — нативная рамка Windows.
      Background=DialogBgBrush — корректный цвет в обоих темах.
      Все элементы: DynamicResource, MinHeight≥40, Stylus.IsFlicksEnabled=False.
@@ -85,7 +85,7 @@
                         </StackPanel>
                     </ListBoxItem>
 
-                    <ListBoxItem Tag="About" Style="{DynamicResource NavItem}" Selected="ListBoxItem_Selected_1">
+                    <ListBoxItem Tag="About" Style="{DynamicResource NavItem}">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <TextBlock Text="&#xE946;" FontFamily="Segoe MDL2 Assets" FontSize="13" Foreground="{DynamicResource TextPrimary}" Margin="0,0,8,0" VerticalAlignment="Center"/>
                             <TextBlock Text="О программе" Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center"/>
@@ -118,6 +118,7 @@
                         <CheckBox x:Name="ChkAutoStart" Content="Запускать слайдшоу при старте"/>
                         <CheckBox x:Name="ChkLoop"      Content="Зациклить воспроизведение"/>
                         <CheckBox x:Name="ChkRecursive" Content="Включать подпапки"/>
+                        <CheckBox x:Name="ChkRestoreSession" Content="Восстанавливать полноэкранный режим и воспроизведение после сна/перезапуска"/>
                         <TextBlock Text="СЧЁТЧИК ФОТОГРАФИЙ" Style="{DynamicResource SectionHeader}"/>
                         <TextBlock Text="Формат:" Foreground="{DynamicResource TextPrimary}" Margin="0,4,0,4"/>
                         <ComboBox x:Name="CmbCounterFormat" Width="300" HorizontalAlignment="Left"/>
@@ -158,7 +159,11 @@
                         <!-- Импорт списка папок -->
                         <TextBlock Text="Импорт списка папок" Foreground="{DynamicResource TextSecondary}" FontSize="11" Margin="0,0,0,3"/>
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                            <!-- Для обеих кнопок импорта установлена стрелка скачивания (&#xE896;) -->
+                            <!-- build 53: восстановлена дифференциация иконок импорта — были
+                                 обе установлены на &#xE896; (Download), из-за чего txt и CSV
+                                 визуально не различались (регрессия при переносе иконок в
+                                 отдельные TextBlock). Список — Download (&#xE896;), CSV —
+                                 OpenFile (&#xE8A1;), как и было задумано в build 51. -->
                             <Button Style="{DynamicResource SecondaryButton}" Margin="0,0,6,0" Click="OnImportTxt" ToolTip="Загрузить папки из ранее сохранённого текстового списка">
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="&#xE896;" FontFamily="Segoe MDL2 Assets" Margin="0,0,5,0"/>
@@ -167,7 +172,7 @@
                             </Button>
                             <Button Style="{DynamicResource SecondaryButton}" Click="OnImportCsv" ToolTip="Загрузить папки из ранее сохранённой таблицы CSV">
                                 <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="&#xE896;" FontFamily="Segoe MDL2 Assets" Margin="0,0,5,0"/>
+                                    <TextBlock Text="&#xE8A1;" FontFamily="Segoe MDL2 Assets" Margin="0,0,5,0"/>
                                     <TextBlock Text="CSV"/>
                                 </StackPanel>
                             </Button>
@@ -223,8 +228,11 @@
                         <StackPanel Orientation="Horizontal">
                             <Slider x:Name="SldFont" Minimum="10" Maximum="28" Width="180"
                                     VerticalAlignment="Center" ValueChanged="OnFontChanged"/>
-                            <TextBlock x:Name="TbFontVal" VerticalAlignment="Center"
-                                       Margin="10,0" Foreground="{DynamicResource TextPrimary}"/>
+                            <TextBox x:Name="TbFontVal" Width="40" VerticalAlignment="Center"
+                                     Margin="10,0,4,0" Foreground="{DynamicResource TextPrimary}"
+                                     TextAlignment="Center" LostFocus="OnFontTextCommit"
+                                     KeyDown="OnEditableFieldKeyDown"/>
+                            <TextBlock Text="pt" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondary}"/>
                         </StackPanel>
                     </StackPanel>
 
@@ -243,8 +251,11 @@
                         <StackPanel Orientation="Horizontal">
                             <Slider x:Name="SldDuration" Minimum="0.2" Maximum="3.0" Width="200"
                                     VerticalAlignment="Center" ValueChanged="OnDurChanged"/>
-                            <TextBlock x:Name="TbDurVal" VerticalAlignment="Center"
-                                       Margin="10,0" Foreground="{DynamicResource TextPrimary}"/>
+                            <TextBox x:Name="TbDurVal" Width="46" VerticalAlignment="Center"
+                                     Margin="10,0,4,0" Foreground="{DynamicResource TextPrimary}"
+                                     TextAlignment="Center" LostFocus="OnDurTextCommit"
+                                     KeyDown="OnEditableFieldKeyDown"/>
+                            <TextBlock Text="с" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondary}"/>
                         </StackPanel>
                     </StackPanel>
 
@@ -265,16 +276,27 @@
                                    Foreground="{DynamicResource TextSecondary}"
                                    Text="Aero7: имитирует стиль Windows 7 Aero Glass с PNG иконками и глянцевыми кнопками."/>
                         <TextBlock Text="LIVE TILES" Style="{DynamicResource SectionHeader}"/>
-                        <CheckBox x:Name="ChkLiveTiles" Content="Обновлять плитку в меню Пуск (только ClickOnce)"/>
-                        <TextBlock TextWrapping="Wrap" FontSize="11" Margin="0,4,0,8"
+                        <CheckBox x:Name="ChkLiveTiles" Content="Обновлять плитку в меню Пуск"/>
+                        <!-- build 53: было "(только ClickOnce)" — неточно: обновление
+                             плитки требует package identity (MSIX), которой нет ни у
+                             ClickOnce, ни у обычной установки через InnoSetup. -->
+                        <TextBlock TextWrapping="Wrap" FontSize="11" Margin="0,2,0,8"
                                    Foreground="{DynamicResource TextSecondary}"
-                                   Text="Размеры: Маленькая (71×71), Средняя (150×150), Широкая (310×150), Крупная (310×310)."/>
+                                   Text="Требует установки из MSIX-пакета (см. Package/README_MSIX.md) — у обычной установки (ClickOnce/InnoSetup) нет системного «удостоверения пакета», без которого Windows не позволяет обновлять плитку."/>
+                        <TextBlock TextWrapping="Wrap" FontSize="11" Margin="0,0,0,8"
+                                   Foreground="{DynamicResource TextSecondary}"
+                                   Text="Размеры: Маленькая (71×71), Средняя (150×150), Широкая (310×150), Крупная (310×310). На Маленькой Windows на части версий всё равно показывает только значок приложения — так устроена сама система, не наше ограничение."/>
+                        <CheckBox x:Name="ChkLiveTilesLarge" Content="Также обновлять крупную плитку (310×310)" Margin="0,0,0,8"/>
                         <TextBlock Text="Частота смены фото на плитке:" Foreground="{DynamicResource TextPrimary}" Margin="0,0,0,4"/>
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                             <Slider x:Name="SldTileInterval" Minimum="0" Maximum="120" Width="200"
                                     VerticalAlignment="Center" ValueChanged="OnTileIntervalChanged"/>
-                            <TextBlock x:Name="TbTileIntervalVal" VerticalAlignment="Center"
-                                       Margin="10,0" Foreground="{DynamicResource TextPrimary}"/>
+                            <TextBox x:Name="TbTileIntervalVal" Width="46" VerticalAlignment="Center"
+                                     Margin="10,0" Foreground="{DynamicResource TextPrimary}"
+                                     TextAlignment="Center" LostFocus="OnTileIntervalTextCommit"
+                                     KeyDown="OnEditableFieldKeyDown"/>
+                            <TextBlock Text="с (0 = как слайдшоу)" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextSecondary}" FontSize="11"/>
                         </StackPanel>
                         <Button x:Name="BtnPinTile" Content="&#xE718;  Закрепить плитку на начальном экране"
                                 Style="{DynamicResource SecondaryButton}"
@@ -439,11 +461,21 @@
                         <TextBlock TextWrapping="Wrap" FontSize="11" Margin="0,0,0,8"
                                    Foreground="{DynamicResource TextSecondary}"
                                    Text="Например, собственный сервер релизов или региональное зеркало GitHub API."/>
-                        <StackPanel Orientation="Horizontal" Margin="0,6,0,8">
+                        <StackPanel Orientation="Horizontal" Margin="0,6,0,4">
                             <Button Content="Проверить" Style="{DynamicResource SecondaryButton}"
                                     Margin="0,0,10,0" Click="OnCheckUpdates"/>
                             <Button Content="Страница релизов" Style="{DynamicResource SecondaryButton}"
-                                    Click="OnOpenReleases"/>
+                                    Margin="0,0,10,0" Click="OnOpenReleases"/>
+                            <!-- build 55: видна только когда найдена более новая версия
+                                 С подходящим под текущую архитектуру/ОС файлом релиза.
+                                 ClickOnce сюда не попадает — у него автообновление
+                                 полностью на своей стороне (см. SystemIntegration.
+                                 Updates.cs). Для InnoSetup/MSIX только СКАЧИВАЕТ и
+                                 ЗАПУСКАЕТ установщик — дальше пользователь ведёт
+                                 обычный диалог сам, вручную. -->
+                            <Button x:Name="BtnInstallUpdate" Content="⬇ Скачать и установить"
+                                    Style="{DynamicResource SecondaryButton}"
+                                    Visibility="Collapsed" Click="OnInstallUpdate"/>
                         </StackPanel>
                         <TextBlock x:Name="TbUpdateStatus" Foreground="{DynamicResource TextSecondary}"
                                    TextWrapping="Wrap" FontSize="12" Margin="0,0,0,16"/>

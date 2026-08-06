@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  PhotoFrame.Package.wapproj — build 56
+
+  Windows Application Packaging Project (Desktop Bridge / MSIX) для
+  PhotoFrame.csproj. Это ОФИЦИАЛЬНО задокументированный Microsoft способ
+  упаковать WPF-приложение в MSIX (single-project MSIX поддерживает только
+  WinUI 3 — см. Package\README_MSIX.md) — как минимум по состоянию на
+  май 2026 (learn.microsoft.com/.../publish-first-app), это по-прежнему
+  "Option A" из двух официально описанных вариантов для WPF/WinForms.
+
+  build 55 — исправление ошибки
+  "Manifest references file 'PhotoFrame.exe' which is not part of the payload":
+  добавлены PackageOutputGroups (запрашивает __GetPublishItems — см. эту
+  же именованную цель в PhotoFrame.csproj), переопределена
+  _ValidateAppReferenceItems (пустая — иначе штатная проверка Desktop Bridge
+  средствами предполагает .NET-Framework-подобный референс и может выдавать
+  ложные предупреждения/ошибки для SDK-style проекта), исправлена
+  EntryPointExe (после _ConvertItems, чтобы манифест ссылался на реальный
+  относительный путь к exe в payload), и добавлена явная предварительная
+  публикация referenced-проекта (PublishReferences, BeforeTargets=
+  "ExpandProjectReferences") — без нЕё Desktop Bridge попытался бы забрать
+  обычный BUILD-выход, а не PUBLISH (там нет self-contained рантайма).
+
+  ВАЖНО (Visual Studio): открывайте PhotoFrame.sln, а не этот файл отдельно —
+  ссылка на PhotoFrame.csproj резолвится в контексте решения (см. также
+  предупреждение о несовпадении Platform в Package\README_MSIX.md — "There
+  was a mismatch between the processor architecture..." — Configuration
+  Manager решения должен иметь одинаковую активную платформу x86/x64 для
+  ОБОИХ проектов одновременно).
+-->
+<Project ToolsVersion="15.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Condition="'$(VisualStudioVersion)' == '' or '$(VisualStudioVersion)' &lt; '15.0'">
+    <VisualStudioVersion>15.0</VisualStudioVersion>
+  </PropertyGroup>
+
+  <!-- Только x86/x64 — реальные, пакуемые в MSIX архитектуры. "AnyCPU" как
+       конфигурация решения существует (для самого PhotoFrame.csproj, вне
+       контекста упаковки), но у WAP-проекта она не имеет смысла: у MSIX-
+       пакета должен быть конкретный ProcessorArchitecture (x86/x64/ARM64;
+       "neutral" — только для чисто управляемых пакетов без нативного кода,
+       что не наш случай из-за COM/WinRT-взаимодействия). -->
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x86">
+      <Configuration>Debug</Configuration>
+      <Platform>x86</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x86">
+      <Configuration>Release</Configuration>
+      <Platform>x86</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+
+  <PropertyGroup>
+    <WapProjPath Condition="'$(WapProjPath)'==''">$(MSBuildExtensionsPath)\Microsoft\DesktopBridge\</WapProjPath>
+  </PropertyGroup>
+
+  <Import Project="$(WapProjPath)\Microsoft.DesktopBridge.props" />
+
+  <PropertyGroup>
+    <ProjectGuid>{A7C3C6FD-7C58-4C86-A4B5-1D0CB30D56F8}</ProjectGuid>
+    <TargetPlatformVersion>10.0.19041.0</TargetPlatformVersion>
+    <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
+    <DefaultLanguage>ru-RU</DefaultLanguage>
+    <AppxPackageSigningEnabled>false</AppxPackageSigningEnabled>
+    <AppxBundle>Always</AppxBundle>
+    <AppxBundlePlatforms>x86|x64</AppxBundlePlatforms>
+    <EntryPointProjectUniqueName>PhotoFrame.csproj</EntryPointProjectUniqueName>
+    <!-- Использовать отладчик CoreCLR, а не классический .NET Framework —
+         без этого F5 из решения может показывать невнятную ошибку отладчика
+         для SDK-style проекта. -->
+    <DebuggerType>CoreClr</DebuggerType>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Platform)'=='x86'">
+    <DesktopBridgeRuntimeIdentifier>win-x86</DesktopBridgeRuntimeIdentifier>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Platform)'=='x64'">
+    <DesktopBridgeRuntimeIdentifier>win-x64</DesktopBridgeRuntimeIdentifier>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AppxManifest Include="Package\Package.appxmanifest">
+      <SubType>Designer</SubType>
+    </AppxManifest>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Package\Assets\**\*">
+      <Link>Assets\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- SkipGetTargetFrameworkProperties: без этого MSBuild пытается сверить
+         TargetFramework ссылающегося (.wapproj, без TFM) и ссылаемого
+         (net8.0-windows...) проектов и выдаёт вводящее в заблуждение
+         предупреждение NU1702 (см. Package\README_MSIX.md).
+         Properties=RuntimeIdentifier;SelfContained: заставляет
+         PhotoFrame.csproj при сборке ИЗ ЭТОГО референса собраться именно как
+         self-contained под нужный конкретный RID — независимо от того, что
+         выбрано в Configuration Manager для самого PhotoFrame.csproj. -->
+    <ProjectReference Include="PhotoFrame.csproj" ReferenceOutputAssembly="true" SkipGetTargetFrameworkProperties="True">
+      <DesktopBridgeSelfContained>True</DesktopBridgeSelfContained>
+      <DesktopBridgeIdentifier>$(DesktopBridgeRuntimeIdentifier)</DesktopBridgeIdentifier>
+      <Properties>SelfContained=%(DesktopBridgeSelfContained);RuntimeIdentifier=%(DesktopBridgeIdentifier)</Properties>
+    </ProjectReference>
+  </ItemGroup>
+
+  <Import Project="$(WapProjPath)\Microsoft.DesktopBridge.targets" />
+
+  <!--
+    build 55 — три добавления ниже: без них Desktop Bridge либо вовсе не
+    находит exe для payload, либо находит не тот файл. См. подробное
+    объяснение в заголовке файла и в PhotoFrame.csproj (__GetPublishItems).
+  -->
+
+  <!-- 1. Запрашиваем у ссылающегося проекта его publish-вывод (не только
+          обычный build-вывод) как дополнительную output group. -->
+  <PropertyGroup>
+    <PackageOutputGroups>@(PackageOutputGroups);__GetPublishItems</PackageOutputGroups>
+  </PropertyGroup>
+
+  <!-- 2. Отключаем штатную валидацию референса — она писалась под
+          .NET-Framework-подобные проекты и для SDK-style ссылки на net8.0
+          иногда ложно ругается на несоответствие TargetFramework, хотя
+          SkipGetTargetFrameworkProperties выше уже снял реальный конфликт. -->
+  <Target Name="_ValidateAppReferenceItems" />
+
+  <!-- 3. Приводим относительный путь exe в манифесте к тому, что реально
+          лежит в payload после нашей __GetPublishItems (папка с именем
+          проекта + имя exe — так Desktop Bridge раскладывает файлы
+          референса по умолчанию). -->
+  <Target Name="_FixEntryPoint" AfterTargets="_ConvertItems">
+    <PropertyGroup>
+      <EntryPointExe>PhotoFrame\PhotoFrame.exe</EntryPointExe>
+    </PropertyGroup>
+  </Target>
+
+  <!-- 4. Явно публикуем (не просто собираем) ссылающийся проект ДО того как
+          Desktop Bridge начнёт разворачивать ProjectReference — иначе он
+          довольствуется обычным Build-выходом, в котором нет self-contained
+          рантайма и нативного apphost (то есть именно того PhotoFrame.exe,
+          на который ссылается манифест). -->
+  <Target Name="PublishReferences" BeforeTargets="ExpandProjectReferences">
+    <MSBuild Projects="@(ProjectReference->'%(FullPath)')"
+             BuildInParallel="$(BuildInParallel)"
+             Properties="Configuration=$(Configuration);Platform=$(Platform);SelfContained=True;RuntimeIdentifier=$(DesktopBridgeRuntimeIdentifier)"
+             Targets="Publish" />
+  </Target>
+</Project>

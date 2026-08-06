@@ -1,6 +1,8 @@
-<!-- Views/DeviceBrowserWindow.xaml — v1.0 (build 52)
+<!-- Views/DeviceBrowserWindow.xaml — v1.1 (build 53)
      Просмотр иерархической ФС подключённых по USB устройств
      (Windows 10 Mobile / Lumia, Android, iOS) и импорт фото из выбранной папки.
+     build 53: исправлена возможная обрезка глифа иконки «Обновить»
+     (Height="13" → FontSize+VerticalAlignment, см. CHANGELOG.md).
 -->
 <Window x:Class="PhotoFrame.Views.DeviceBrowserWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -64,9 +66,13 @@
         <Grid Grid.Row="3" Margin="0,14,0,0">
             <Button Style="{DynamicResource SecondaryButton}" HorizontalAlignment="Left" Click="OnRefresh">
                 <StackPanel Orientation="Horizontal">
-                    <!-- Иконка обновления (&#xE72C;) -->
-                    <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" Margin="0,0,5,0" Height="13"/>
-                    <TextBlock Text="Обновить"/>
+                    <!-- Иконка обновления (&#xE72C;). build 53: было Height="13" —
+                         жёсткая высота без учёта реальной высоты строки шрифта
+                         могла обрезать глиф снизу/сверху; используем FontSize +
+                         VerticalAlignment, как и остальные MDL2-иконки в приложении. -->
+                    <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" FontSize="13"
+                               VerticalAlignment="Center" Margin="0,0,5,0"/>
+                    <TextBlock Text="Обновить" VerticalAlignment="Center"/>
                 </StackPanel>
             </Button>
 

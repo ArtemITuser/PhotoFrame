@@ -1,6 +1,19 @@
-// Services/FileScanner.cs — v3.6
+// Services/FileScanner.cs — v3.7 (build 53)
 // DiskError and ErrorKind defined HERE only.
 // DiskErrorTypes.cs has been removed to prevent any duplicate-definition errors.
+//
+// build 53: ScanAsync принимает необязательный removableRoots — пути,
+// добавленные со съёмных носителей (см. AppSettings.RemovableSourcePaths).
+// Раньше ЛЮБОЙ отсутствующий путь (включая просто не воткнутую в данный
+// момент USB-флешку — штатная, ожидаемая ситуация) немедленно порождал
+// DiskError и показывался как баннер ошибки, часто "постфактум" — то есть
+// заметно позже самого отключения, при следующем пересканировании. Теперь
+// для путей из removableRoots отсутствие директории тихо пропускается:
+// путь остаётся в списке источников и снова начнёт сканироваться сам,
+// как только накопитель окажется на месте. Обычные (несъёмные) пути
+// по-прежнему считаются ошибкой при отсутствии — это оставшийся
+// действительно полезный сигнал (например, отключённый сетевой диск или
+// внутренний том, а не "флешку просто вынули").
 
 using System;
 using System.Collections.Generic;
@@ -46,8 +59,12 @@ namespace PhotoFrame.Services
         public static Task<ScanResult> ScanAsync(
             IEnumerable<string> paths,
             bool recursive,
-            Action<string>? progress = null)
+            Action<string>? progress = null,
+            IReadOnlyCollection<string>? removableRoots = null)
         {
+            var removableSet = new HashSet<string>(
+                removableRoots ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+
             return Task.Run(() =>
             {
                 var photos  = new List<PhotoInfo>();
@@ -61,6 +78,12 @@ namespace PhotoFrame.Services
                 {
                     if (!Directory.Exists(root))
                     {
+                        // Съёмный носитель, которого сейчас просто нет на месте —
+                        // не ошибка, а ожидаемое состояние; путь остаётся в
+                        // источниках и сам "оживёт" при следующем сканировании
+                        // после подключения.
+                        if (removableSet.Contains(root)) continue;
+
                         errors.Add(new DiskError
                         {
                             Path    = root,

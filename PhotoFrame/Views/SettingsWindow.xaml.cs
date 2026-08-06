@@ -1,8 +1,16 @@
-// Views/SettingsWindow.xaml.cs — v3.6 (build 52)
+// Views/SettingsWindow.xaml.cs — v3.7 (build 53)
 // + Импорт списка папок из .txt/.csv (симметрично экспорту), корректные
 //   MDL2-глифы E896/E8A1 (Download/OpenFile — семантика "получить/открыть")
 // TryFindResource everywhere. Per-section try/catch in OnLoaded.
 // UiMode (Modern/Aero7). CounterFormat. LiveTiles. About/GitHub/UpdateCheck.
+//
+// build 53: LiveTilesLargeEnabled и RestoreLastSessionState подключены к UI
+// (были/были бы мёртвыми настройками); слайдеры Font/Duration/TileInterval
+// получили пару Slider+TextBox (touch-friendly аудит); теги съёмных
+// носителей (_removablePaths) для FillDriveButtons/OnAddDrive — см.
+// AppSettings.RemovableSourcePaths; исправлена регрессия иконок импорта
+// (txt/CSV делили один и тот же глиф); удалены 2 пустых
+// автосгенерированных обработчика ListBoxItem_Selected(_1).
 
 using System;
 using System.Collections.Generic;
@@ -29,6 +37,11 @@ namespace PhotoFrame.Views
         public AppSettings Result { get; private set; }
         private readonly AppSettings _w;
         private readonly ObservableCollection<string> _paths = new();
+        /// <summary>Подмножество _paths, добавленное со съёмных носителей
+        /// (build 53) — см. AppSettings.RemovableSourcePaths. Отдельный
+        /// набор, а не флаг на элементе _paths, чтобы не менять тип
+        /// коллекции, к которой уже привязан PathList.</summary>
+        private readonly HashSet<string> _removablePaths = new(StringComparer.OrdinalIgnoreCase);
         private ScanResult? _lastScan;
 
         private static readonly JsonSerializerOptions _jo = new()
@@ -71,6 +84,7 @@ namespace PhotoFrame.Views
             ChkAutoStart.IsChecked = _w.AutoStart;
             ChkLoop.IsChecked      = _w.LoopSlideshow;
             ChkRecursive.IsChecked = _w.IncludeSubdirectories;
+            ChkRestoreSession.IsChecked = _w.RestoreLastSessionState;
             FillCombo<CounterFormat>(CmbCounterFormat, new CounterFormatToStringConverter());
             SelectTag(CmbCounterFormat, _w.CounterDisplayFormat);
         }
@@ -78,6 +92,7 @@ namespace PhotoFrame.Views
         private void LoadSources()
         {
             foreach (var p in _w.SelectedPaths) _paths.Add(p);
+            foreach (var p in _w.RemovableSourcePaths) _removablePaths.Add(p);
             PathList.ItemsSource            = _paths;
             ChkWatchRemovable.IsChecked     = _w.WatchRemovableMedia;
             ChkSuggestRemovable.IsChecked   = _w.SuggestRemovableMedia;
@@ -109,9 +124,10 @@ namespace PhotoFrame.Views
             _loadingAppearance = true;
             FillCombo<AppTheme>(CmbTheme, new AppThemeToStringConverter());
             SelectTag(CmbTheme, _w.Theme);
-            ChkMica.IsChecked      = _w.EnableMicaEffect;
-            ChkLiveTiles.IsChecked = _w.LiveTilesEnabled;
-            SldTileInterval.Value  = Math.Max(0, Math.Min(120, _w.LiveTileCycleIntervalSeconds));
+            ChkMica.IsChecked        = _w.EnableMicaEffect;
+            ChkLiveTiles.IsChecked   = _w.LiveTilesEnabled;
+            ChkLiveTilesLarge.IsChecked = _w.LiveTilesLargeEnabled;
+            SldTileInterval.Value    = Math.Max(0, Math.Min(120, _w.LiveTileCycleIntervalSeconds));
             FillCombo<TilePhotoDistance>(CmbTileDistance, new TilePhotoDistanceToStringConverter());
             SelectTag(CmbTileDistance, _w.TilePhotoDistance);
 
@@ -124,7 +140,11 @@ namespace PhotoFrame.Views
                     ? "Включено. Win11 = Mica, Win10 = Acrylic blur."
                     : "Выключено — сплошной фон.";
 
-            // Кнопка закрепления плитки видна только если WinRT API доступен (Win10/11)
+            // build 53: кнопка закрепления плитки видна только когда пиннинг
+            // реально может сработать — т.е. процесс запущен из MSIX-пакета
+            // (package identity), а не просто на Windows 10/11 (WinRT-типы
+            // резолвятся в ОС независимо от identity, поэтому раньше кнопка
+            // показывалась и там, где закрепить было физически невозможно).
             if (BtnPinTile != null)
                 BtnPinTile.Visibility = LiveTileService.IsPinningSupported()
                     ? Visibility.Visible : Visibility.Collapsed;
@@ -232,6 +252,7 @@ namespace PhotoFrame.Views
                 {
                     double gb = d.TotalSize / (1024.0 * 1024 * 1024);
                     string root = d.RootDirectory.FullName;
+                    bool removable = d.DriveType == DriveType.Removable;
                     var btn = new Button
                     {
                         Content    = $"{d.Name} ({gb:F0} ГБ)",
@@ -242,7 +263,7 @@ namespace PhotoFrame.Views
                         Cursor     = System.Windows.Input.Cursors.Hand,
                         Style      = TryFindResource("SecondaryButton") as Style
                     };
-                    btn.Click += (_, __) => { AddPath(root); _ = LoadPreviewAsync(); };
+                    btn.Click += (_, __) => { AddPath(root, removable); _ = LoadPreviewAsync(); };
                     DriveBtns.Children.Add(btn);
                 }
                 catch { }
@@ -352,7 +373,11 @@ namespace PhotoFrame.Views
                 dlg.Content = sp;
 
                 if (dlg.ShowDialog() == true && cmb.SelectedIndex >= 0)
-                { AddPath(drives[cmb.SelectedIndex].RootDirectory.FullName); _ = LoadPreviewAsync(); }
+                {
+                    var chosen = drives[cmb.SelectedIndex];
+                    AddPath(chosen.RootDirectory.FullName, chosen.DriveType == DriveType.Removable);
+                    _ = LoadPreviewAsync();
+                }
             }
             catch (Exception ex)
             {
@@ -364,10 +389,10 @@ namespace PhotoFrame.Views
         private void OnRemovePath(object s, RoutedEventArgs e)
         {
             if (PathList?.SelectedItem is string p)
-            { _paths.Remove(p); _ = LoadPreviewAsync(); }
+            { _paths.Remove(p); _removablePaths.Remove(p); _ = LoadPreviewAsync(); }
         }
 
-        private void AddPath(string path)
+        private void AddPath(string path, bool isRemovable = false)
         {
             if (string.IsNullOrWhiteSpace(path)) return;
             try
@@ -376,6 +401,14 @@ namespace PhotoFrame.Views
                      + Path.DirectorySeparatorChar;
                 if (!_paths.Contains(path, StringComparer.OrdinalIgnoreCase))
                     _paths.Add(path);
+                // build 53: помечаем как съёмный источник, чтобы его временное
+                // отсутствие (флешка не воткнута) не показывалось как ошибка —
+                // см. AppSettings.RemovableSourcePaths / FileScanner.ScanAsync.
+                // Снимается тег только полным удалением пути (OnRemovePath) —
+                // не сбрасываем его на false здесь, чтобы случайное повторное
+                // добавление того же пути другим способом (например, через
+                // обычный выбор папки) не вернуло докучливый баннер ошибки.
+                if (isRemovable) _removablePaths.Add(path);
             }
             catch { }
         }
@@ -588,9 +621,21 @@ namespace PhotoFrame.Views
             TbIntervalVal.Text = v >= 60 ? $"{v/60}м {v%60:D2}с" : $"{v} с";
         }
         private void OnFontChanged(object s, RoutedPropertyChangedEventArgs<double> e)
-        { if (TbFontVal != null) TbFontVal.Text = $"{Math.Round(e.NewValue,1)} pt"; }
+        { if (TbFontVal != null) TbFontVal.Text = $"{Math.Round(e.NewValue, 1)}"; }
+        private void OnFontTextCommit(object s, RoutedEventArgs e)
+        {
+            if (SldFont == null || TbFontVal == null) return;
+            if (TryParseClampedDouble(TbFontVal.Text, SldFont, out double v)) SldFont.Value = v;
+            else TbFontVal.Text = $"{Math.Round(SldFont.Value, 1)}";
+        }
         private void OnDurChanged(object s, RoutedPropertyChangedEventArgs<double> e)
-        { if (TbDurVal != null) TbDurVal.Text = $"{e.NewValue:F2} с"; }
+        { if (TbDurVal != null) TbDurVal.Text = $"{e.NewValue:F2}"; }
+        private void OnDurTextCommit(object s, RoutedEventArgs e)
+        {
+            if (SldDuration == null || TbDurVal == null) return;
+            if (TryParseClampedDouble(TbDurVal.Text, SldDuration, out double v)) SldDuration.Value = v;
+            else TbDurVal.Text = $"{SldDuration.Value:F2}";
+        }
         // ─── Редактируемые числовые поля (слайдер ↔ текстовое поле) ────────────────
         // build 52: значения теперь можно не только тянуть слайдером, но и
         // вписать вручную. Общий парсер/коммит переиспользуется для всех пар
@@ -614,6 +659,21 @@ namespace PhotoFrame.Views
             var m = System.Text.RegularExpressions.Regex.Match(text, @"-?\d+");
             if (!m.Success || !int.TryParse(m.Value, out int v)) return false;
             minutes = Math.Clamp(v, (int)slider.Minimum, (int)slider.Maximum);
+            return true;
+        }
+
+        /// <summary>Как TryParseClampedInt, но для дробных значений (размер
+        /// шрифта, длительность перехода) — build 53.</summary>
+        private static bool TryParseClampedDouble(string? text, Slider slider, out double value)
+        {
+            value = 0;
+            if (string.IsNullOrWhiteSpace(text)) return false;
+            var m = System.Text.RegularExpressions.Regex.Match(
+                text.Replace(',', '.'), @"-?\d+(\.\d+)?");
+            if (!m.Success || !double.TryParse(m.Value,
+                System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out double v)) return false;
+            value = Math.Clamp(v, slider.Minimum, slider.Maximum);
             return true;
         }
 
@@ -654,10 +714,12 @@ namespace PhotoFrame.Views
         }
 
         private void OnTileIntervalChanged(object s, RoutedPropertyChangedEventArgs<double> e)
+        { if (TbTileIntervalVal != null) TbTileIntervalVal.Text = $"{(int)e.NewValue}"; }
+        private void OnTileIntervalTextCommit(object s, RoutedEventArgs e)
         {
-            if (TbTileIntervalVal == null) return;
-            int v = (int)e.NewValue;
-            TbTileIntervalVal.Text = v == 0 ? "Как слайдшоу" : v >= 60 ? $"{v/60}м {v%60:D2}с" : $"{v} с";
+            if (SldTileInterval == null || TbTileIntervalVal == null) return;
+            if (TryParseClampedInt(TbTileIntervalVal.Text, SldTileInterval, out int v)) SldTileInterval.Value = v;
+            else TbTileIntervalVal.Text = $"{(int)SldTileInterval.Value}";
         }
 
         private async void OnPinTile(object s, RoutedEventArgs e)
@@ -838,16 +900,23 @@ namespace PhotoFrame.Views
             }
         }
 
+        private ReleaseAsset? _pendingUpdateAsset;
+        private InstallChannel _installChannel;
+
         private async void OnCheckUpdates(object s, RoutedEventArgs e)
         {
             if (TbUpdateStatus == null) return;
             TbUpdateStatus.Text = "Проверяем…";
+            if (BtnInstallUpdate != null) BtnInstallUpdate.Visibility = Visibility.Collapsed;
+            _pendingUpdateAsset = null;
             try
             {
                 var cur = Assembly.GetExecutingAssembly().GetName().Version ?? new Version(1,0,0,0);
                 string? mirror = string.IsNullOrWhiteSpace(TbUpdateMirror?.Text) ? null : TbUpdateMirror.Text.Trim();
-                var (tag, isNewer) = await SystemIntegration.CheckUpdateAsync(cur, mirror);
-                if (tag == null)
+                _installChannel = SystemIntegration.DetectInstallChannel();
+                var info = await SystemIntegration.CheckUpdateWithAssetAsync(cur, _installChannel, mirror);
+
+                if (string.IsNullOrEmpty(info.Tag))
                 {
                     TbUpdateStatus.Text = mirror != null
                         ? "Не удалось связаться с указанным зеркалом."
@@ -855,12 +924,73 @@ namespace PhotoFrame.Views
                     return;
                 }
                 string cs = $"v{cur.Major}.{cur.Minor}.{cur.Build}.{cur.Revision}";
-                TbUpdateStatus.Text = isNewer
-                    ? $"⬆ Доступна версия: {tag}  (у вас: {cs})"
-                    : $"✔ Актуальная версия ({cs}).";
+                string channelName = _installChannel switch
+                {
+                    InstallChannel.Msix      => "MSIX",
+                    InstallChannel.ClickOnce => "ClickOnce",
+                    InstallChannel.InnoSetup => "InnoSetup",
+                    _                        => "переносная/неизвестная установка"
+                };
+
+                if (!info.IsNewer)
+                {
+                    TbUpdateStatus.Text = $"✔ Актуальная версия ({cs}). Канал: {channelName}.";
+                }
+                else if (_installChannel == InstallChannel.ClickOnce)
+                {
+                    // ClickOnce обновляется сам — просто "подталкиваем" проверку
+                    // на его стороне (см. SystemIntegration.Updates.cs) и не
+                    // предлагаем ручное скачивание/установку.
+                    SystemIntegration.TryNudgeClickOnceUpdateCheck();
+                    TbUpdateStatus.Text = $"⬆ Доступна версия {info.Tag} (у вас {cs}). " +
+                        "Обновление ClickOnce происходит автоматически — при следующем запуске.";
+                }
+                else if (info.Asset != null)
+                {
+                    _pendingUpdateAsset = info.Asset;
+                    TbUpdateStatus.Text = $"⬆ Доступна версия {info.Tag} (у вас {cs}). " +
+                        $"Канал: {channelName}. Найден файл: {info.Asset.Name}.";
+                    if (BtnInstallUpdate != null) BtnInstallUpdate.Visibility = Visibility.Visible;
+                }
+                else
+                {
+                    TbUpdateStatus.Text = $"⬆ Доступна версия {info.Tag} (у вас {cs}), но подходящий " +
+                        "под вашу архитектуру файл не найден среди файлов релиза. Откройте страницу релизов вручную.";
+                }
                 _w.LastUpdateCheckUtc = DateTime.UtcNow.ToString("o");
             }
             catch (Exception ex) { TbUpdateStatus.Text = $"Ошибка: {ex.Message}"; }
+        }
+
+        /// <summary>
+        /// build 55: скачивает и ЗАПУСКАЕТ (не молча ставит) найденный
+        /// установщик/пакет — см. заголовок SystemIntegration.Updates.cs.
+        /// Для InnoSetup это открывает окно Setup.exe, для MSIX — системный
+        /// App Installer; дальше пользователь ведёт диалог сам.
+        /// </summary>
+        private async void OnInstallUpdate(object s, RoutedEventArgs e)
+        {
+            if (_pendingUpdateAsset == null || TbUpdateStatus == null) return;
+
+            string action = _installChannel == InstallChannel.Msix
+                ? "скачать и открыть MSIX-пакет"
+                : "скачать и запустить установщик";
+            var confirm = MessageBox.Show(
+                $"Сейчас будет: {action} «{_pendingUpdateAsset.Name}».\n\n" +
+                "Дальше установка/обновление продолжится в его собственном окне — " +
+                "программа ничего не делает автоматически без вашего участия.\n\nПродолжить?",
+                "Обновление", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (confirm != MessageBoxResult.Yes) return;
+
+            if (BtnInstallUpdate != null) BtnInstallUpdate.IsEnabled = false;
+            var progress = new Progress<string>(msg => TbUpdateStatus.Text = msg);
+            var (ok, message) = await SystemIntegration.DownloadAndLaunchUpdateAsync(_pendingUpdateAsset, progress);
+            TbUpdateStatus.Text = message;
+            if (BtnInstallUpdate != null)
+            {
+                BtnInstallUpdate.IsEnabled = true;
+                if (ok) BtnInstallUpdate.Visibility = Visibility.Collapsed;
+            }
         }
 
         private void OnOpenReleases(object s, RoutedEventArgs e)
@@ -902,9 +1032,13 @@ namespace PhotoFrame.Views
             _w.AutoStart                = ChkAutoStart?.IsChecked == true;
             _w.LoopSlideshow            = ChkLoop?.IsChecked      == true;
             _w.IncludeSubdirectories    = ChkRecursive?.IsChecked == true;
+            _w.RestoreLastSessionState  = ChkRestoreSession?.IsChecked == true;
             if (SelectedTag<CounterFormat>(CmbCounterFormat, out var cf)) _w.CounterDisplayFormat = cf;
 
             _w.SelectedPaths         = _paths.ToList();
+            // build 53: сохраняем только теги для путей, что реально ещё в
+            // списке — на случай, если путь был удалён через OnRemovePath.
+            _w.RemovableSourcePaths  = _removablePaths.Intersect(_paths, StringComparer.OrdinalIgnoreCase).ToList();
             _w.WatchRemovableMedia   = ChkWatchRemovable?.IsChecked   == true;
             _w.SuggestRemovableMedia = ChkSuggestRemovable?.IsChecked == true;
 
@@ -921,6 +1055,7 @@ namespace PhotoFrame.Views
             if (SelectedTag<AppTheme>(CmbTheme, out var th)) _w.Theme = th;
             _w.EnableMicaEffect             = ChkMica?.IsChecked     == true;
             _w.LiveTilesEnabled             = ChkLiveTiles?.IsChecked == true;
+            _w.LiveTilesLargeEnabled        = ChkLiveTilesLarge?.IsChecked == true;
             _w.LiveTileCycleIntervalSeconds = (int)(SldTileInterval?.Value ?? 0);
             if (SelectedTag<TilePhotoDistance>(CmbTileDistance, out var tpd)) _w.TilePhotoDistance = tpd;
             if (SelectedTag<UiMode>(CmbUiMode, out var um)) _w.UiMode = um;
@@ -990,16 +1125,6 @@ namespace PhotoFrame.Views
                 return JsonSerializer.Deserialize<AppSettings>(j, _jo) ?? new AppSettings();
             }
             catch { return new AppSettings(); }
-        }
-
-        private void ListBoxItem_Selected(object sender, RoutedEventArgs e)
-        {
-
-        }
-
-        private void ListBoxItem_Selected_1(object sender, RoutedEventArgs e)
-        {
-
         }
     }
 }

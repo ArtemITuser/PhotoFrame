@@ -1,34 +1,64 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
+    <!-- TargetFramework с поддержкой Windows 10/11 API для Живых Плиток встроенными средствами .NET 8 -->
     <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
-    <LangVersion>10</LangVersion>
+    <LangVersion>latest</LangVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>PhotoFrame</AssemblyName>
     <RootNamespace>PhotoFrame</RootNamespace>
-    <Version>1.2.1.0</Version>
-    <AssemblyVersion>1.2.1.0</AssemblyVersion>
-    <FileVersion>1.2.1.52</FileVersion>
+    <!--
+      Версия (build 56). Ветка 1.2.2.x — версия монотонно растёт относительно
+      всех предыдущих релизов (1.2.0.5 → 1.2.1.0 → 1.2.1.5 → 1.2.2.0 → 1.2.2.5),
+      т.е.
+      ClickOnce/MSIX-автообновление у всех прежних пользователей сработает
+      корректно как обновление вперёд. См. CHANGELOG.md.
+    -->
+    <Version>1.2.2.5</Version>
+    <AssemblyVersion>1.2.2.5</AssemblyVersion>
+    <FileVersion>1.2.2.5</FileVersion>
     <Product>PhotoFrame — Фоторамка</Product>
     <Company>ArtemITuser</Company>
     <Copyright>© 2026 Ochkin Artyom (ArtemITuser). BSL-1.0 License.</Copyright>
     <Description>Цифровая фоторамка для Windows 10/11</Description>
+
     <ApplicationManifest>app.manifest</ApplicationManifest>
+
     <PlatformTarget>AnyCPU</PlatformTarget>
     <Prefer32Bit>false</Prefer32Bit>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <ApplicationIcon>Resources\Icons\AppIcon.ico</ApplicationIcon>
-    <Platforms>AnyCPU;x86</Platforms>
+    <!-- x86 + x64 build targets kept side by side (see Properties/PublishProfiles/
+         FolderProfile.x86.pubxml and .x64.pubxml, and now PhotoFrame.Package.wapproj
+         for MSIX) so the app can be published for either architecture. -->
+    <Platforms>AnyCPU;x86;x64</Platforms>
+    <!-- build 54: RuntimeIdentifiers (мн.ч.!) обязателен для restore-графа —
+         без него PhotoFrame.Package.wapproj, передавая RuntimeIdentifier=win-x86
+         (ед.ч.) через ProjectReference/Properties, столкнётся с NETSDK1047
+         ("project.assets.json does not contain information for target ..."),
+         т.к. NuGet просто не скачает нужные RID-специфичные пакеты заранее. -->
+    <RuntimeIdentifiers>win-x86;win-x64</RuntimeIdentifiers>
+
+    <!-- Сборка не пакетируется здесь как MSIX напрямую (это делает отдельный
+         PhotoFrame.Package.wapproj, см. ниже) — минимальная поддерживаемая ОС
+         для ClickOnce/InnoSetup-канала остаётся на уровне Windows 7 SP1;
+         Windows-10-специфичные API (Живые плитки, Mica/Acrylic и т.п.)
+         вызываются исключительно через try/catch и явные runtime-проверки
+         версии ОС, а не через SupportedOSPlatformVersion. -->
+    <SupportedOSPlatformVersion>7.0</SupportedOSPlatformVersion>
+
+    <NuGetAuditLevel>low</NuGetAuditLevel>
+    <SignAssembly>False</SignAssembly>
+    <NeutralLanguage>ru</NeutralLanguage>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="System.Management" Version="8.0.0" />
-    <!-- Требуется для "dynamic" — позднее связывание Shell.Application COM
-         в DeviceBrowserService.cs (просмотр Lumia/Android/iOS по USB) -->
+    <!-- Только чистые, необходимые проекту внешние зависимости -->
+    <PackageReference Include="System.Management" Version="10.0.10" />
     <PackageReference Include="Microsoft.CSharp" Version="4.7.0" />
   </ItemGroup>
 
@@ -36,4 +66,54 @@
     <Resource Include="Resources\Icons\*.png" />
     <Resource Include="Resources\Icons\*.ico" />
   </ItemGroup>
+
+  <!--
+    ПРИМЕЧАНИЕ (build 53, исправление критического бага): здесь раньше стояли
+    <EnableMsixTooling>true</EnableMsixTooling> и безусловный
+    <WindowsPackageType>MSIX</WindowsPackageType> — из-за отсутствия условия
+    это заставляло АБСОЛЮТНО ЛЮБУЮ сборку (включая обычный `dotnet build` и
+    Release-публикацию для InnoSetup) требовать Package.appxmanifest и
+    Images\*.png по путям, которых нет в проекте. Убрано. Правильный,
+    полноценно работающий способ собрать MSIX теперь реализован через
+    PhotoFrame.Package.wapproj (см. Package\README_MSIX.md) — официально
+    задокументированный Microsoft подход для WPF (single-project MSIX
+    поддерживает только WinUI 3, см. README_MSIX.md).
+  -->
+
+  <!--
+    build 55 — ИСПРАВЛЕНИЕ КОРНЕВОЙ ПРИЧИНЫ ошибки
+    "Manifest references file 'PhotoFrame.exe' which is not part of the payload"
+    при сборке PhotoFrame.Package.wapproj.
+
+    Почему это происходит: устаревшие цели Desktop Bridge
+    (Microsoft.DesktopBridge.targets, к которым обращается .wapproj) писались
+    ещё для классических .NET Framework/UWP-проектов и умеют собирать payload
+    только из ограниченного набора встроенных "output groups" ссылающегося
+    проекта. Ни одна из них не соответствует современной публикации в стиле
+    SDK (dotnet publish) — именно там лежат self-contained рантайм-файлы и
+    нативный apphost (PhotoFrame.exe). Из-за этого build ссылался на exe,
+    который физически никогда не копировался в собираемый payload — сама по
+    себе передача RuntimeIdentifier/SelfContained через ProjectReference
+    (см. .wapproj) заставляет ПРАВИЛЬНО СОБРАТЬ нужный output, но не заставляет
+    .wapproj его ЗАБРАТЬ.
+
+    Исправление — открытый, задокументированный с эпохи .NET Core 3.0 и
+    актуальный по сей день приём (первоисточник: Claire Novotny,
+    "Packaging a .NET Core app with the Desktop Bridge", 2018 — тот же
+    паттерн подтверждается и в современных разборах этой ошибки за 2024 год):
+    объявить публикационные файлы как ОТДЕЛЬНУЮ именованную output group,
+    которую .wapproj сможет запросить явно через PackageOutputGroups (см.
+    PhotoFrame.Package.wapproj). ComputeFilesToPublish/ResolvedFileToPublish —
+    стабильная, публичная часть конвейера публикации .NET SDK (тем же приёмом
+    пользуются, например, встроенные шаблоны SPA/Blazor для подмешивания
+    собственных файлов в publish-вывод), так что это не хрупкий обходной
+    путь "на удачу", а штатная точка расширения публикации.
+  -->
+  <Target Name="__GetPublishItems" DependsOnTargets="ComputeFilesToPublish" Returns="@(_PublishItem)">
+    <ItemGroup>
+      <_PublishItem Include="@(ResolvedFileToPublish->'%(FullPath)')" TargetPath="%(ResolvedFileToPublish.RelativePath)" OutputGroup="__GetPublishItems" />
+      <_PublishItem Include="$(ProjectDepsFilePath)" TargetPath="$(ProjectDepsFileName)" Condition="'$(ProjectDepsFilePath)' != ''" />
+      <_PublishItem Include="$(ProjectRuntimeConfigFilePath)" TargetPath="$(ProjectRuntimeConfigFileName)" Condition="'$(ProjectRuntimeConfigFilePath)' != ''" />
+    </ItemGroup>
+  </Target>
 </Project>

@@ -1,9 +1,22 @@
 <Solution>
+  <!--
+    build 55: этот файл описывает ТОЛЬКО PhotoFrame.csproj — для повседневной
+    разработки (правка кода/XAML, F5, обычная Release-публикация для
+    ClickOnce/InnoSetup). Формат .slnx пока не полностью проверен с
+    классическими MSBuild-проектами вроде .wapproj (Windows Application
+    Packaging Project использует старый формат project-файла без SDK), а сам
+    .wapproj для сборки MSIX всё равно требует специфичного порядка платформ
+    в Configuration Manager — см. PhotoFrame.sln (классический формат) для
+    работы с MSIX/MSIXBUNDLE и Package\README_MSIX.md.
+  -->
   <Configurations>
     <Platform Name="Any CPU" />
     <Platform Name="x86" />
+    <Platform Name="x64" />
   </Configurations>
   <Project Path="PhotoFrame.csproj">
+    <Platform Solution="Any CPU" Project="AnyCPU" />
     <Platform Solution="*|x86" Project="x86" />
+    <Platform Solution="*|x64" Project="x64" />
   </Project>
 </Solution>

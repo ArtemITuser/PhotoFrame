@@ -1,4 +1,4 @@
-// Models/AppSettings.cs — v4.2 (build 52)
+// Models/AppSettings.cs — v4.3 (build 53)
 
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
@@ -59,6 +59,17 @@ namespace PhotoFrame.Models
         public bool         IncludeSubdirectories { get; set; } = true;
         public bool         WatchRemovableMedia   { get; set; } = false;
         public bool         SuggestRemovableMedia { get; set; } = true;
+
+        /// <summary>
+        /// Подмножество SelectedPaths, добавленное со съёмных носителей
+        /// (USB-флешки и т.п.) — определяется по DriveType на момент
+        /// добавления пути (build 53). Когда такой путь временно
+        /// недоступен (флешка просто не воткнута), FileScanner тихо
+        /// пропускает его вместо показа баннера "накопитель не найден" —
+        /// это ожидаемая, а не ошибочная ситуация. Обычные несъёмные пути
+        /// сюда не попадают и продолжают показывать баннер как раньше.
+        /// </summary>
+        public List<string> RemovableSourcePaths { get; set; } = new();
 
         // ── Slideshow ────────────────────────────────────────────────────────
         public int      SlideshowIntervalSeconds { get; set; } = 5;
@@ -147,5 +158,24 @@ namespace PhotoFrame.Models
 
         /// <summary>UTC-время последней выполненной проверки обновлений (ISO 8601).</summary>
         public string? LastUpdateCheckUtc { get; set; }
+
+        // ── Состояние сеанса (build 53) ──────────────────────────────────────
+        /// <summary>
+        /// Восстанавливать полноэкранный режим и воспроизведение слайд-шоу
+        /// при следующем запуске, если они были активны в прошлом сеансе.
+        /// Работает как подстраховка на случай выхода из спящего режима:
+        /// процесс обычно переживает сон Windows без изменений (см.
+        /// MainWindow.OnPowerModeChanged), но если по любой причине
+        /// приложение всё же перезапустится, состояние не теряется.
+        /// </summary>
+        public bool RestoreLastSessionState { get; set; } = true;
+
+        /// <summary>Был ли включён полноэкранный режим в момент последнего
+        /// сохранения состояния (закрытие окна/уход в спящий режим).</summary>
+        public bool WasFullscreen { get; set; } = false;
+
+        /// <summary>Проигрывалось ли слайд-шоу в момент последнего
+        /// сохранения состояния.</summary>
+        public bool WasPlaying { get; set; } = false;
     }
 }

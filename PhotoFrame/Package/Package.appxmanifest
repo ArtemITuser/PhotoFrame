@@ -1,7 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Package/Package.appxmanifest — build 52 (v1.2.1.0)
+  Package/Package.appxmanifest — build 56 (v1.2.2.5)
   © Очкин Артём, 2026
+
+  build 53: этот манифест уже верно объявлял все четыре размера плитки
+  (Square71x71 = Small, Square150x150 = Medium, Wide310x150 = Wide,
+  Square310x310 = Large) и Application Id="PhotoFrame" — сам файл не
+  менялся структурно. Проблема была на стороне кода: LiveTileService.cs
+  запрашивал обновлятель плитки по строковому Id "ArtemITuser.PhotoFrame",
+  который НЕ совпадал с Id="PhotoFrame" ниже, из-за чего обновления тихо
+  не находили приложение. См. Services/LiveTileService.cs.
+
+  Ранее рядом существовал второй, ошибочный манифест в корне проекта
+  (Photoframe\package.appxmanifest, с строчной "p") — черновик от
+  однопроектного MSIX-инструментария с недействительными пространствами
+  имён (http://microsoft.com), без <Identity> и с неподставленным
+  $targetnametoken$.exe. Он удалён: единственный используемый манифест —
+  этот файл.
 
   Манифест MSIX-упаковки для PhotoFrame. Используется двумя путями:
 
@@ -33,10 +48,18 @@
   xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
   IgnorableNamespaces="uap rescap desktop">
 
+  <!-- ProcessorArchitecture must match the actual packaged binaries (see
+       makeappx step above). This manifest documents x64 as the default MSIX
+       sideload target; for an x86 MSIX, publish with FolderProfile.x86.pubxml
+       instead and change this to ProcessorArchitecture="x86" before packaging
+       — a single manifest can only describe one architecture at a time
+       unless built as an .msixbundle, which is out of scope here. The
+       ClickOnce and InnoSetup channels (see DEPLOYMENT.md / Installer.iss)
+       already cover x86+x64 from one build without this limitation. -->
   <Identity
     Name="ArtemITuser.PhotoFrame"
     Publisher="CN=Ochkin Artyom"
-    Version="1.2.1.0"
+    Version="1.2.2.5"
     ProcessorArchitecture="x64" />
 
   <Properties>
@@ -50,6 +73,25 @@
     <Resource Language="en-us" />
   </Resources>
 
+  <!--
+    build 55: "Manifest references file 'PhotoFrame.exe' which is not part
+    of the payload" был багом в PhotoFrame.Package.wapproj/PhotoFrame.csproj
+    (harvesting publish-, а не build-вывода) — см. __GetPublishItems в
+    PhotoFrame.csproj и комментарии в .wapproj. Этот манифест не менялся
+    структурно, кроме версии.
+
+    Диагностика на будущее: если после установки MSIX-пакет корректно
+    устанавливается, но при запуске падает с ошибкой загрузки нативной
+    библиотеки (DllNotFoundException/аналог, не .NET-исключение) — это может
+    означать нехватку VC++ Runtime внутри контейнера пакета. Self-contained
+    публикация .NET 8 для WPF уже включает собственные копии нужных
+    vcruntime*/msvcp140*.dll (в отличие от классических .NET Framework/UWP
+    приложений, которым нужен отдельный SDKReference/PackageDependency на
+    Microsoft.VCLibs.140.00.UWPDesktop) — поэтому по умолчанию эта
+    зависимость здесь НЕ объявлена. Если проблема всё же проявится, добавьте:
+      <PackageDependency Publisher="CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US" Name="Microsoft.VCLibs.140.00.UWPDesktop" MinVersion="14.0.30704.0" />
+    внутрь <Dependencies> ниже.
+  -->
   <Dependencies>
     <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0" />
   </Dependencies>

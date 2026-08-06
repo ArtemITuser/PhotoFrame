@@ -1,6 +1,24 @@
-// App.xaml.cs — v3.6 (build 52)
+// App.xaml.cs — v3.7 (build 53)
+//
+// build 53 — COMException/UCEERR_RENDERTHREADFAILURE:
+//   DispatcherUnhandledException уже перехватывал ЛЮБОЕ исключение и
+//   показывал техническое диалоговое окно (это и есть окно из отчёта:
+//   "Ошибка: UCEERR_RENDERTHREADFAILURE (0x88980406) / Тип: COMException")
+//   — то есть приложение НЕ падало, но пугало пользователя сырым кодом
+//   ошибки при полностью штатной, самовосстанавливающейся ситуации: этот
+//   конкретный HRESULT — сбой потока композиции WPF, который почти всегда
+//   возникает сразу после выхода из спящего режима/сброса видеодрайвера и
+//   обычно не требует вмешательства (WPF пересоздаёт поток композиции
+//   сам). Теперь для НЕЁ диалог не показывается вовсе — только
+//   Trace-запись для диагностики. Остальные исключения по-прежнему
+//   показываются, но не чаще одного диалога за ErrorDialogThrottle, чтобы
+//   всплеск из нескольких исключений подряд не заваливал пользователя
+//   стопкой модальных окон (см. общее пожелание "ошибки не должны
+//   слишком часто всплывать").
 using System;
+using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Threading;
 using PhotoFrame.Helpers;
 using PhotoFrame.Models;
 using PhotoFrame.Services;
@@ -14,19 +32,45 @@ namespace PhotoFrame
         public static IntPtr       PreviewHwnd  { get; private set; } = IntPtr.Zero;
         public static event Action<AppTheme>? ThemeChanged;
 
+        /// <summary>HRESULT для UCEERR_RENDERTHREADFAILURE — транзиентный сбой
+        /// потока композиции WPF (обычно сразу после resume/смены GPU-
+        /// драйвера); WPF в большинстве случаев восстанавливает поток сам.</summary>
+        private const int UCEERR_RENDERTHREADFAILURE = unchecked((int)0x88980406);
+
+        private static readonly TimeSpan ErrorDialogThrottle = TimeSpan.FromSeconds(5);
+        private static DateTime _lastErrorDialogUtc = DateTime.MinValue;
+
         protected override void OnStartup(StartupEventArgs e)
         {
-            LiveTileService.SetAppUserModelId();
+            // build 56: доп. защита на вызывающей стороне (сам метод уже
+            // оборачивает P/Invoke в try/catch — это просто ещё один слой
+            // страховки, чтобы вообще ничто в этой строке не могло сорвать
+            // запуск приложения).
+            try { LiveTileService.SetAppUserModelId(); }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Trace.WriteLine($"[PhotoFrame] SetAppUserModelId: {ex.Message}");
+            }
             base.OnStartup(e);
             (StartMode, PreviewHwnd) = SystemIntegration.ParseArgs(e.Args);
 
-            DispatcherUnhandledException += (_, ex) =>
+            DispatcherUnhandledException += OnDispatcherUnhandledException;
+
+            // Подстраховка (build 53): раньше необработанное исключение на
+            // ЛЮБОМ фоновом потоке (вне Dispatcher) заваливало бы процесс
+            // без единого следа — большинство мест в Services уже обёрнуты
+            // в try/catch, но это защита "на всякий случай", а не замена
+            // им. Ничего не подавляет — только логирует перед тем, как
+            // .NET всё равно завершит процесс (UnhandledException не имеет
+            // Handled-флага, в отличие от DispatcherUnhandledException).
+            AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+                System.Diagnostics.Trace.WriteLine(
+                    $"[PhotoFrame] Необработанное исключение вне UI-потока: {args.ExceptionObject}");
+            System.Threading.Tasks.TaskScheduler.UnobservedTaskException += (_, args) =>
             {
-                var inner = ex.Exception;
-                while (inner.InnerException != null) inner = inner.InnerException;
-                MessageBox.Show($"Ошибка: {inner.Message}\n\nТип: {inner.GetType().Name}",
-                    "PhotoFrame", MessageBoxButton.OK, MessageBoxImage.Error);
-                ex.Handled = true;
+                System.Diagnostics.Trace.WriteLine(
+                    $"[PhotoFrame] Необработанное исключение задачи: {args.Exception}");
+                args.SetObserved();
             };
 
             try
@@ -43,6 +87,29 @@ namespace PhotoFrame
 
             if (StartMode == AppStartMode.Configure)
                 new Views.SettingsWindow(SettingsService.Load()).Show();
+        }
+
+        private static void OnDispatcherUnhandledException(object? sender, DispatcherUnhandledExceptionEventArgs ex)
+        {
+            var inner = ex.Exception;
+            while (inner.InnerException != null) inner = inner.InnerException;
+
+            if (inner is COMException comEx && comEx.HResult == UCEERR_RENDERTHREADFAILURE)
+            {
+                System.Diagnostics.Trace.WriteLine(
+                    "[PhotoFrame] UCEERR_RENDERTHREADFAILURE перехвачен и подавлен " +
+                    "(транзиентный сбой потока композиции WPF, обычно после resume) — диалог не показан.");
+                ex.Handled = true;
+                return;
+            }
+
+            var now = DateTime.UtcNow;
+            if ((now - _lastErrorDialogUtc) < ErrorDialogThrottle) { ex.Handled = true; return; }
+            _lastErrorDialogUtc = now;
+
+            MessageBox.Show($"Ошибка: {inner.Message}\n\nТип: {inner.GetType().Name}",
+                "PhotoFrame", MessageBoxButton.OK, MessageBoxImage.Error);
+            ex.Handled = true;
         }
 
         public static void ChangeTheme(AppTheme t) => ApplyTheme(t, notify: true);
