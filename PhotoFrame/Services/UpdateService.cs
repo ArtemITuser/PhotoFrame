@@ -305,13 +305,19 @@ namespace PhotoFrame.Services
                     // Полная 4-сегментная версия из InformationalVersion — канон для отображения
                     if (System.Text.RegularExpressions.Regex.IsMatch(core, @"^\d+(\.\d+){3}$"))
                         result = core;
+                    // 3-сегментная (локальная/dev-сборка без CI-редописания): показываем как есть,
+                    // без дописывания ".0" в Revision — иначе UI врёт про несуществующий билд.
+                    else if (System.Text.RegularExpressions.Regex.IsMatch(core, @"^\d+(\.\d+){1,2}$"))
+                        result = core;
                 }
             }
             catch { }
             if (result == null)
             {
                 var v = GetCurrentVersion();
-                result = $"{v.Major}.{v.Minor}.{v.Build}.{v.Revision}";
+                result = v.Revision > 0
+                    ? $"{v.Major}.{v.Minor}.{v.Build}.{v.Revision}"
+                    : $"{v.Major}.{v.Minor}.{v.Build}";
             }
             _displayVersionCache = result;
             return result;
