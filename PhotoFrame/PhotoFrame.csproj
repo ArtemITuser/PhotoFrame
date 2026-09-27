@@ -11,9 +11,10 @@
     <RootNamespace>PhotoFrame</RootNamespace>
 
     <!-- Единственное место для версии. Читается через Assembly.GetExecutingAssembly() -->
-    <Version>1.0.8.5</Version>
-    <AssemblyVersion>1.0.8.5</AssemblyVersion>
-    <FileVersion>1.0.8.5</FileVersion>
+    <!-- v3.3: единая версия Free-сборки; CI переопределяет через -p:Version=... -->
+    <Version>1.2.3.0</Version>
+    <AssemblyVersion>1.2.3.0</AssemblyVersion>
+    <FileVersion>1.2.3.0</FileVersion>
 
     <Product>PhotoFrame — Фоторамка</Product>
     <Company>ArtemITuser</Company>

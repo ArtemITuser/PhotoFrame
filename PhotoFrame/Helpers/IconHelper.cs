@@ -110,6 +110,57 @@ namespace PhotoFrame.Helpers
             => btn.Content = MakeContent(role, size);
 
         /// <summary>
+        /// v3.3: точечное применение Aero-иконки к TextBlock-«слоту» кнопки
+        /// (подпись под иконкой сохраняется). Если PNG отсутствует/не загружен —
+        /// глиф Segoe MDL2 остаётся (корректная деградация набора).
+        /// </summary>
+        public static void ApplyAeroGlyph(TextBlock? slot, IconRole role, double size = 20)
+        {
+            if (slot == null) return;
+            if (GetBitmap(role) == null) return; // оставляем MDL2-глиф из XAML
+            var parent = slot.Parent as Panel;
+            if (parent == null) return;
+            int idx = parent.Children.IndexOf(slot);
+            parent.Children.RemoveAt(idx);
+            parent.Children.Insert(idx, MakeContent(role, size));
+        }
+
+        /// <summary>
+        /// v3.3: применяет ВСЕ иконки Aero-набора к кнопкам главного окна одним
+        /// вызовом. Вызывается из MainWindow.OnLoaded — раньше Map существовал,
+        /// но ни одна кнопка его не использовала (везде был только Segoe MDL2).
+        /// Если PNG-ресурс отсутствует/не загрузился — остаётся штатный MDL2-глиф
+        /// из XAML (то есть набор деградирует корректно, ничего не «ломается»).
+        /// </summary>
+        public static void ApplyAeroIcons(
+            ContentControl? playPause = null,
+            ContentControl? previous  = null,
+            ContentControl? next      = null,
+            ContentControl? settings  = null,
+            ContentControl? theme     = null,
+            ContentControl? fullscreen= null,
+            ContentControl? exitFullscreen = null,
+            ContentControl? shuffle   = null,
+            ContentControl? folder    = null,
+            ContentControl? brightness= null,
+            double size = 20)
+        {
+            if (playPause != null)
+                SetButtonIcon(playPause, GetBitmap(IconRole.Play) != null
+                    ? IconRole.Play : IconRole.Pause, size);
+            if (previous   != null) SetButtonIcon(previous,   IconRole.Previous, size);
+            if (next       != null) SetButtonIcon(next,       IconRole.Next, size);
+            if (settings   != null) SetButtonIcon(settings,   IconRole.Settings, size);
+            if (theme      != null) SetButtonIcon(theme,      IconRole.Theme, size);
+            if (fullscreen != null) SetButtonIcon(fullscreen, IconRole.Fullscreen, size);
+            if (exitFullscreen != null)
+                SetButtonIcon(exitFullscreen, IconRole.ExitFullscreen, size);
+            if (shuffle    != null) SetButtonIcon(shuffle,    IconRole.Shuffle, size);
+            if (folder     != null) SetButtonIcon(folder,     IconRole.Folder, size);
+            if (brightness != null) SetButtonIcon(brightness, IconRole.Theme, size);
+        }
+
+        /// <summary>
         /// Загружает thumbnail из файла изображения для предпросмотра.
         /// Возвращает null при ошибке.
         /// </summary>

@@ -432,28 +432,97 @@ namespace PhotoFrame.Views
         }
 
         // ─── О программе / обновления ─────────────────────────────────────────────
+        // v3.3: полноценный цикл — проверка → ПРЯМОЕ скачивание с GitHub Release
+        // (с проверкой SHA-256, если CI выложил sidecar) → запуск установщика
+        // с корректным UAC. Контур обновлений НЕ зависит от лицензирования Pro.
+
+        private Services.UpdateInfo? _pendingUpdate;
 
         private async void OnCheckUpdates(object s, RoutedEventArgs e)
         {
             if (TbUpdateStatus == null) return;
-            TbUpdateStatus.Text = "Проверяем…";
+            TbUpdateStatus.Text   = "Проверяем…";
+            BtnCheckUpdates.IsEnabled  = false;
+            BtnDownloadUpdate.Visibility = Visibility.Collapsed;
             try
             {
-                var cur = Assembly.GetExecutingAssembly().GetName().Version ?? new Version(1,0,0,0);
-                var (tag, isNewer) = await SystemIntegration.CheckGitHubUpdateAsync(cur);
-
-                if (tag == null)
-                { TbUpdateStatus.Text = "Не удалось связаться с GitHub. Проверьте интернет."; return; }
+                var cur = Assembly.GetExecutingAssembly().GetName().Version ?? new Version(1, 0, 0, 0);
+                var res = await Services.UpdateService.CheckAsync(cur);
 
                 string curStr = $"v{cur.Major}.{cur.Minor}.{cur.Build}.{cur.Revision}";
-                TbUpdateStatus.Text = isNewer
-                    ? $"⬆ Доступна версия: {tag}  (у вас: {curStr})\nОткройте страницу релизов для загрузки."
-                    : $"✔ Актуальная версия установлена ({curStr}).";
+                if (!res.Ok)
+                { TbUpdateStatus.Text = $"Не удалось связаться с GitHub: {res.Error}"; return; }
+
+                if (!res.IsNewer || res.Update == null)
+                { TbUpdateStatus.Text = $"✔ Актуальная версия установлена ({curStr})."; return; }
+
+                _pendingUpdate = res.Update;
+                if (string.IsNullOrEmpty(res.Update.AssetUrl))
+                {
+                    TbUpdateStatus.Text = $"⬆ Доступна {_pendingUpdate.Tag} (у вас {curStr}). {res.Error}";
+                    return;
+                }
+                TbUpdateStatus.Text =
+                    $"⬆ Доступна версия {_pendingUpdate.Tag} (у вас: {curStr}), " +
+                    $"{_pendingUpdate.AssetSizeBytes / 1024 / 1024:F1} МБ.\n" +
+                    "«Скачать и установить» — установщик запустится сам; при установке " +
+                    "для всех пользователей Windows покажет запрос UAC.";
+                BtnDownloadUpdate.Visibility = Visibility.Visible;
             }
             catch (Exception ex) { TbUpdateStatus.Text = $"Ошибка: {ex.Message}"; }
+            finally { BtnCheckUpdates.IsEnabled = true; }
         }
 
-        private void OnOpenReleases(object s, RoutedEventArgs e) => SystemIntegration.OpenGitHubReleases();
+        private async void OnDownloadUpdate(object s, RoutedEventArgs e)
+        {
+            var info = _pendingUpdate;
+            if (info == null || string.IsNullOrEmpty(info.AssetUrl)) return;
+
+            BtnDownloadUpdate.IsEnabled = false;
+            BtnCheckUpdates.IsEnabled   = false;
+            PgUpdate.Visibility         = Visibility.Visible;
+            PgUpdate.Value              = 0;
+            try
+            {
+                var progress = new Progress<double>(p => Dispatcher.Invoke(() =>
+                {
+                    if (p >= 0) { PgUpdate.IsIndeterminate = false; PgUpdate.Value = p * 100; }
+                    else        { PgUpdate.IsIndeterminate = true; }
+                }));
+
+                TbUpdateStatus.Text = "Скачиваем установщик…";
+                string path = await Services.UpdateService.DownloadAsync(info, progress);
+                PgUpdate.IsIndeterminate = false; PgUpdate.Value = 100;
+
+                TbUpdateStatus.Text = info.Sha256AssetUrl != null
+                    ? "SHA-256 совпал. Запускаем установщик…"
+                    : "Запускаем установщик… (sidecar-чексумма не найдена — пропущено)";
+
+                bool started = Services.UpdateService.Install(path);
+                if (!started)
+                {
+                    TbUpdateStatus.Text =
+                        "Не удалось запустить установщик (UAC отменён?).\n" +
+                        "Откройте «Страница релизов» и запустите Setup вручную.";
+                    return;
+                }
+                // Установщик пошёл — закрываем приложение, чтобы InnoSetup мог
+                // перезаписать файлы без блокировки.
+                Application.Current.Shutdown();
+            }
+            catch (InvalidDataException ex)
+            { TbUpdateStatus.Text = "⛔ " + ex.Message; }
+            catch (Exception ex)
+            { TbUpdateStatus.Text = $"Ошибка загрузки: {ex.Message}"; }
+            finally
+            {
+                BtnDownloadUpdate.IsEnabled = true;
+                BtnCheckUpdates.IsEnabled   = true;
+                PgUpdate.Visibility         = Visibility.Collapsed;
+            }
+        }
+
+        private void OnOpenReleases(object s, RoutedEventArgs e) => Services.UpdateService.OpenReleasesPage();
         private void OnOpenGitHub(object s, RoutedEventArgs e)   => SystemIntegration.OpenGitHub();
 
         // ─── OK / Отмена ──────────────────────────────────────────────────────────

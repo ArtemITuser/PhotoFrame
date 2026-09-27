@@ -24,6 +24,9 @@ namespace PhotoFrame
 
             DispatcherUnhandledException += (_, ex) =>
             {
+                // v3.3: StackOverflowException НЕ перехватывается — процесс умирает
+                // без этого окна. Лечим первопричины (итеративный FileScanner,
+                // лимит пропуска битых файлов). Здесь — обычные исключения.
                 Exception inner = ex.Exception;
                 while (inner.InnerException != null) inner = inner.InnerException;
                 MessageBox.Show($"Ошибка: {inner.Message}\n\nТип: {inner.GetType().Name}",

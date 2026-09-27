@@ -65,6 +65,9 @@ namespace PhotoFrame
                     : "PhotoFrame";
 
                 RefreshDwmTheme();
+                // v3.3: применяем полный набор Aero-иконок к тулбару (PNG из
+                // Resources/Icons; при отсутствии PNG остаётся Segoe MDL2 из XAML).
+                ApplyToolbarAeroIcons();
                 App.ThemeChanged += OnThemeChanged;
 
                 if (_cfg.EnableMicaEffect)
@@ -89,6 +92,11 @@ namespace PhotoFrame
                     await ReloadPhotosAsync();
                 else
                     ShowEmpty();
+
+                // v3.3: фоновая автопроверка обновлений (не блокирует старт;
+                // контур обновлений не связан с лицензированием Pro).
+                if (_cfg.AutoCheckUpdates)
+                    _ = CheckUpdatesSilentlyAsync();
             }
             catch (Exception ex)
             {
@@ -125,14 +133,32 @@ namespace PhotoFrame
             if (!photo.DateTaken.HasValue && photo.Latitude == null)
                 await Task.Run(() => MetadataReader.Populate(photo));
 
-            var bmp = await Task.Run(() => LoadBitmap(photo.FilePath));
-            if (bmp == null)
+            // v3.3: вместо рекурсивного само-вызова — итеративный цикл с лимитом.
+            // Рекурсия при серии битых файлов могла дать StackOverflowException
+            // («Exception через некоторое время работы»), а без лимита на всефайлово
+            // повреждённой папке — зациклиться.
+            for (int attempt = 0; attempt < MaxCorruptSkip; attempt++)
             {
-                if (_playlist.Count > 1)
-                { _playlist.Next(_cfg.PlayMode, _cfg.LoopSlideshow); await ShowCurrentAsync(animate); }
-                return;
+                var bmp = await Task.Run(() => LoadBitmap(photo.FilePath));
+                if (bmp != null)
+                {
+                    RenderCurrent(bmp, animate);
+                    return;
+                }
+                if (_playlist.Count <= 1) break;
+                if (_playlist.Next(_cfg.PlayMode, _cfg.LoopSlideshow) == null) break;
+                photo = _playlist.Current;
+                if (photo == null) break;
             }
+            UpdateCounter();
+        }
 
+        private const int MaxCorruptSkip = 50;
+
+        private void RenderCurrent(System.Windows.Media.Imaging.BitmapSource bmp, bool animate)
+        {
+            var photo = _playlist.Current;
+            if (photo == null) return;
             UpdateOverlays(photo);
 
             if (animate && _engine != null && _playlist.Count > 1)
@@ -140,6 +166,11 @@ namespace PhotoFrame
             else
                 _engine?.ShowImmediate(bmp);
 
+            UpdateCounter();
+        }
+
+        private void UpdateCounter()
+        {
             // Счётчик: текущий / проиндексировано (всего файлов)
             int indexed = _lastScan?.Photos.Count ?? _playlist.Count;
             int total   = _lastScan?.TotalFilesScanned ?? indexed;
@@ -237,7 +268,7 @@ namespace PhotoFrame
             WindowStyle   = WindowStyle.None;
             WindowState   = WindowState.Maximized;
             _fullscreen   = true;
-            TbFullscreenIcon.Text  = "\uE741";  // BackToWindow
+            { if (FindName("TbFullscreenIcon") is TextBlock t) t.Text = "\uE741"; else if (FindName("TbFullscreenIcon") is System.Windows.Controls.Image im) { var bm = IconHelper.GetBitmap(IconRole.ExitFullscreen); if (bm!=null) im.Source=bm; } } // v3.3 slot-safe
             TbFullscreenLabel.Text = "Окно";
             BtnFullscreen.ToolTip  = "Оконный режим  F / F11";
         }
@@ -249,7 +280,7 @@ namespace PhotoFrame
             WindowState   = _prevWinState;
             _fullscreen   = false;
             ShowToolbarNow();
-            TbFullscreenIcon.Text  = "\uE740";  // FullScreen
+            { if (FindName("TbFullscreenIcon") is TextBlock t) t.Text = "\uE740"; else if (FindName("TbFullscreenIcon") is System.Windows.Controls.Image im) { var bm = IconHelper.GetBitmap(IconRole.Fullscreen); if (bm!=null) im.Source=bm; } } // v3.3 slot-safe
             TbFullscreenLabel.Text = "Экран";
             BtnFullscreen.ToolTip  = "Полный экран  F / F11";
         }
@@ -272,15 +303,41 @@ namespace PhotoFrame
 
         private void SyncPlayIcon()
         {
-            TbPlayIcon.Text  = _playing ? "\uE769" : "\uE768";
+            // v3.3: слот иконки после ApplyToolbarAeroIcons может быть Image (Aero PNG)
+            // или TextBlock (Segoe MDL2, если PNG недоступен). Обновляем оба варианта.
+            switch (FindName("TbPlayIcon"))
+            {
+                case System.Windows.Controls.Image img:
+                    var bmp = IconHelper.GetBitmap(_playing ? IconRole.Pause : IconRole.Play);
+                    if (bmp != null) img.Source = bmp;
+                    break;
+                case TextBlock tb:
+                    tb.Text = _playing ? "\uE769" : "\uE768";
+                    break;
+            }
             TbPlayLabel.Text = _playing ? "Пауза"  : "Пуск";
             BtnPlayPause.ToolTip = _playing ? "Пауза  Пробел" : "Пуск  Пробел";
+        }
+
+        /// <summary>v3.3: полный набор Aero-иконок тулбара через FindName-safe слоты.</summary>
+        private void ApplyToolbarAeroIcons()
+        {
+            IconHelper.ApplyAeroGlyph(FindName("TbPlayIcon")       as TextBlock, _playing ? IconRole.Pause : IconRole.Play);
+            IconHelper.ApplyAeroGlyph(FindName("TbPrevIcon")       as TextBlock, IconRole.Previous);
+            IconHelper.ApplyAeroGlyph(FindName("TbNextIcon")       as TextBlock, IconRole.Next);
+            IconHelper.ApplyAeroGlyph(FindName("TbSettingsIcon")   as TextBlock, IconRole.Settings);
+            IconHelper.ApplyAeroGlyph(FindName("TbThemeIcon")      as TextBlock, IconRole.Theme);
+            IconHelper.ApplyAeroGlyph(FindName("TbFullscreenIcon") as TextBlock, IconRole.Fullscreen);
+            IconHelper.ApplyAeroGlyph(FindName("TbPlayModeIcon")   as TextBlock, IconRole.Shuffle);
         }
 
         private void SyncThemeIcon()
         {
             bool dark = App.CurrentTheme == AppTheme.Dark;
-            TbThemeIcon.Text = dark ? "\uE708" : "\uE706";
+            // v3.3: слот может быть Aero-Image — тогда просто обновляем ToolTip,
+            // иконка темы (солнце/луна) остаётся из PNG-набора.
+            if (FindName("TbThemeIcon") is TextBlock tbTheme)
+                tbTheme.Text = dark ? "\uE708" : "\uE706";
             BtnTheme.ToolTip = dark
                 ? "Переключить на светлую тему"
                 : "Переключить на тёмную тему";
@@ -600,6 +657,24 @@ namespace PhotoFrame
             SystemIntegration.PreventSleep(false);
             SettingsService.Save(_cfg);
             try { _tray?.Dispose(); } catch { }
+        }
+
+        /// <summary>v3.3: тихая проверка обновлений; при новой версии — BalloonTip в трее.</summary>
+        private async Task CheckUpdatesSilentlyAsync()
+        {
+            try
+            {
+                var ver = Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0);
+                var res = await Services.UpdateService.CheckAsync(ver);
+                if (res.Ok && res.IsNewer && res.Update != null && _tray != null)
+                {
+                    _tray.Visible = true;
+                    _tray.BalloonTipTitle = "PhotoFrame: доступно обновление";
+                    _tray.BalloonTipText  = $"Версия {res.Update.Tag}. Откройте Настройки → Обновления.";
+                    _tray.ShowBalloonTip(8000);
+                }
+            }
+            catch { /* сеть/антивирус — молча пропускаем */ }
         }
     }
 }

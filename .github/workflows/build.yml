@@ -1,0 +1,128 @@
+name: Build & Release (PhotoFrame Free)
+
+# Автокомпиляция WPF-версии (.NET 8) + автопубликация релиза по тегу vX.Y.Z(.R)
+on:
+  push:
+    branches: [ master ]
+    tags: [ "v*" ]
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch:
+
+env:
+  DOTNET_VERSION: "8.0.x"
+  PROJECT: PhotoFrame/PhotoFrame.csproj
+
+jobs:
+  build:
+    name: Build ${{ matrix.arch }}
+    if: startsWith(github.ref, 'refs/tags/v') == false || github.event_name == 'push'
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        arch: [win-x64, win-x86]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Resolve version
+        id: ver
+        shell: pwsh
+        run: |
+          if ("${{ github.ref }}" -like "refs/tags/v*") {
+            $v = "${{ github.ref_name }}".Substring(1)
+          } else {
+            $v = "1.2.3.${{ github.run_number }}"
+          }
+          echo "version=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Restore
+        run: dotnet restore ${{ env.PROJECT }}
+
+      - name: Build
+        run: dotnet build ${{ env.PROJECT }} -c Release -p:Version=${{ steps.ver.outputs.version }} --no-restore
+
+      - name: Publish (self-contained, single exe folder)
+        run: >
+          dotnet publish ${{ env.PROJECT }} -c Release
+          -r ${{ matrix.arch }} --self-contained true
+          -p:PublishSingleFile=false
+          -p:Version=${{ steps.ver.outputs.version }}
+          -o publish/${{ matrix.arch }}
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PhotoFrame-${{ matrix.arch }}
+          path: publish/${{ matrix.arch }}
+          retention-days: 14
+
+  installer:
+    name: InnoSetup ${{ matrix.arch }}
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        arch: [x64, x86]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download published binaries (${{ matrix.arch }})
+        uses: actions/download-artifact@v4
+        with:
+          name: PhotoFrame-win-${{ matrix.arch }}
+          path: publish/win-${{ matrix.arch }}
+
+      - name: Resolve version
+        id: ver
+        shell: pwsh
+        run: echo "version=${{ github.ref_name }}".Substring(1) >> $env:GITHUB_OUTPUT
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $iss = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          & $iss /DMyAppVersion=${{ steps.ver.outputs.version }} /DMyArch=${{ matrix.arch }} Installer/PhotoFrame.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Checksums (sidecar .sha256 — их читает UpdateService в приложении)
+        shell: pwsh
+        run: |
+          Get-ChildItem Installer/output/*.exe | ForEach-Object {
+            $h = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
+            Set-Content -Path "$($_.FullName).sha256" -Value "$h  $($_.Name)" -NoNewline
+          }
+
+      - name: Upload installer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ matrix.arch }}
+          path: Installer/output/*
+          retention-days: 14
+
+  release:
+    name: Publish GitHub Release
+    needs: installer
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all installer artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: installers-*
+          merge-multiple: true
+          path: dist
+
+      - name: Create/Update release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true

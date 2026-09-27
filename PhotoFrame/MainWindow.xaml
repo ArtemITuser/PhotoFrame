@@ -192,7 +192,7 @@
                             Width="56" Height="56"
                             Click="OnBtnPrev">
                         <StackPanel>
-                            <TextBlock Text="&#xE892;" FontFamily="Segoe MDL2 Assets"
+                            <TextBlock x:Name="TbPrevIcon" Text="&#xE892;" FontFamily="Segoe MDL2 Assets"
                                        FontSize="20" HorizontalAlignment="Center"/>
                             <TextBlock Text="Назад" FontFamily="Segoe UI" FontSize="9"
                                        Foreground="#CCFFFFFF" HorizontalAlignment="Center"
@@ -222,7 +222,7 @@
                             Width="56" Height="56"
                             Click="OnBtnNext">
                         <StackPanel>
-                            <TextBlock Text="&#xE893;" FontFamily="Segoe MDL2 Assets"
+                            <TextBlock x:Name="TbNextIcon" Text="&#xE893;" FontFamily="Segoe MDL2 Assets"
                                        FontSize="20" HorizontalAlignment="Center"/>
                             <TextBlock Text="Вперёд" FontFamily="Segoe UI" FontSize="9"
                                        Foreground="#CCFFFFFF" HorizontalAlignment="Center"
@@ -255,7 +255,7 @@
                             Width="56" Height="56"
                             Click="OnBtnSettings">
                         <StackPanel>
-                            <TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets"
+                            <TextBlock x:Name="TbSettingsIcon" Text="&#xE713;" FontFamily="Segoe MDL2 Assets"
                                        FontSize="20" HorizontalAlignment="Center"/>
                             <TextBlock Text="Настройки" FontFamily="Segoe UI" FontSize="9"
                                        Foreground="#CCFFFFFF" HorizontalAlignment="Center"

@@ -70,5 +70,11 @@ namespace PhotoFrame.Models
         public bool PreventSleep           { get; set; } = true;
         public int  MonitorOffAfterMinutes { get; set; } = 0;
         public int  SleepAfterMinutes      { get; set; } = 0;
+
+        // ─── Обновления (v3.3) ─────────────────────────────────────────────────────
+        /// <summary>Проверять наличие новой версии на старте приложения.</summary>
+        public bool AutoCheckUpdates       { get; set; } = true;
+        /// <summary>Скачанный установщик: проверять SHA-256 по sidecar-файлу .sha256.</summary>
+        public bool VerifyUpdateChecksum   { get; set; } = true;
     }
 }

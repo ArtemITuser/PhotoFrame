@@ -112,6 +112,10 @@ namespace PhotoFrame.Services
             {
                 Front.BeginAnimation(UIElement.OpacityProperty, null);
                 Back.BeginAnimation(UIElement.OpacityProperty,  null);
+                // v3.3: снимаем зависшие анимации трансформов (иначе FillBehavior.Stop
+                // вернёт «до-анимационное» значение поверх нового кадра — визуальный баг)
+                StopTransformAnimations(_scaleA, _transA);
+                StopTransformAnimations(_scaleB, _transB);
                 CleanupEffects();
                 Back.Opacity  = 1;
                 Back.Clip     = null;
@@ -373,10 +377,12 @@ namespace PhotoFrame.Services
         {
             var ease = new CubicEase { EasingMode = EasingMode.EaseInOut };
 
-            // Добавляем RotateTransform к существующей TransformGroup Front
+            // v3.3: фиксируем конкретный TransformGroup ДО возможной смены слоёв —
+            // иначе done() удаляет skew/rotate не из того слоя (утечка трансформов).
             var rotate = new RotateTransform(0);
-            if (Front.RenderTransform is TransformGroup tg)
-                tg.Children.Add(rotate);
+            var frontTg = Front.RenderTransform as TransformGroup;
+            if (frontTg != null)
+                frontTg.Children.Add(rotate);
 
             Back.Opacity = 0;
 
@@ -386,11 +392,8 @@ namespace PhotoFrame.Services
             var fadeIn   = Anim(0, 1, dur, ease);
             AttachDone(fadeIn, () =>
             {
-                // Убираем RotateTransform после анимации
-                if (Front.RenderTransform is TransformGroup tg2)
-                {
-                    tg2.Children.Remove(rotate);
-                }
+                // Убираем RotateTransform именно из того слоя, куда добавляли
+                frontTg?.Children.Remove(rotate);
                 done();
             });
 
@@ -408,9 +411,11 @@ namespace PhotoFrame.Services
             var eIn  = new CubicEase { EasingMode = EasingMode.EaseIn };
 
             // SkewTransform даёт ощущение загибания страницы
+            // v3.3: то же исправление, что и в Spiral — удаление строго из исходного tg.
             var skew = new SkewTransform(0, 0);
-            if (Front.RenderTransform is TransformGroup tg)
-                tg.Children.Add(skew);
+            var pageTg = Front.RenderTransform as TransformGroup;
+            if (pageTg != null)
+                pageTg.Children.Add(skew);
 
             var skewAnim = new DoubleAnimation(0, -20, new Duration(half))
                 { EasingFunction = eIn, FillBehavior = FillBehavior.Stop };
@@ -419,8 +424,7 @@ namespace PhotoFrame.Services
 
             narrowX.Completed += (_, __) =>
             {
-                if (Front.RenderTransform is TransformGroup tg2)
-                    tg2.Children.Remove(skew);
+                pageTg?.Children.Remove(skew);
 
                 Front.Source = Back.Source; Back.Source = null;
                 Front.Opacity = 1;
@@ -436,6 +440,14 @@ namespace PhotoFrame.Services
         }
 
         // ─── Вспомогательные ──────────────────────────────────────────────────────
+
+        private static void StopTransformAnimations(ScaleTransform s, TranslateTransform t)
+        {
+            s.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+            s.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+            t.BeginAnimation(TranslateTransform.XProperty, null);
+            t.BeginAnimation(TranslateTransform.YProperty, null);
+        }
 
         private static DoubleAnimation Anim(double from, double to, TimeSpan dur,
             IEasingFunction? ease = null)
