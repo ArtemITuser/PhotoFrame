@@ -81,13 +81,16 @@ jobs:
       - name: Resolve version
         id: ver
         shell: pwsh
-        run: echo "version=${{ github.ref_name }}".Substring(1) >> $env:GITHUB_OUTPUT
+        run: |
+          # ref_name для тега vX.Y.Z(.R) -> версия без ведущей 'v'
+          $v = "${{ github.ref_name }}".TrimStart('v')
+          "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
       - name: Build installer
         shell: pwsh
         run: |
           $iss = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-          & $iss /DMyAppVersion=${{ steps.ver.outputs.version }} /DMyArch=${{ matrix.arch }} Installer/PhotoFrame.iss
+          & $iss "/DMyAppVersion=${{ steps.ver.outputs.version }}" "/DMyArch=${{ matrix.arch }}" "/DOutputBaseName=PhotoFrame_v${{ steps.ver.outputs.version }}_${{ matrix.arch }}_Setup" Installer/PhotoFrame.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Checksums (sidecar .sha256 — их читает UpdateService в приложении)
@@ -95,7 +98,8 @@ jobs:
         run: |
           Get-ChildItem Installer/output/*.exe | ForEach-Object {
             $h = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
-            Set-Content -Path "$($_.FullName).sha256" -Value "$h  $($_.Name)" -NoNewline
+            # sidecar должен содержать ТОЛЬКО hex-хэш: UpdateService парсит весь файл как хэш
+            Set-Content -Path "$($_.FullName).sha256" -Value $h -NoNewline
           }
 
       - name: Upload installer artifacts
