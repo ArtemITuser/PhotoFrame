@@ -119,7 +119,7 @@ namespace PhotoFrame.Views
 
         private void LoadAbout()
         {
-            var ver = Assembly.GetExecutingAssembly().GetName().Version;
+            var ver = Services.UpdateService.GetCurrentVersion();
             if (TbAboutVersion != null && ver != null)
                 TbAboutVersion.Text =
                     $"PhotoFrame  v{ver.Major}.{ver.Minor}.{ver.Build}.{ver.Revision}";
@@ -446,7 +446,7 @@ namespace PhotoFrame.Views
             BtnDownloadUpdate.Visibility = Visibility.Collapsed;
             try
             {
-                var cur = Assembly.GetExecutingAssembly().GetName().Version ?? new Version(1, 0, 0, 0);
+                var cur = Services.UpdateService.GetCurrentVersion();
                 var res = await Services.UpdateService.CheckAsync(cur);
 
                 string curStr = $"v{cur.Major}.{cur.Minor}.{cur.Build}.{cur.Revision}";

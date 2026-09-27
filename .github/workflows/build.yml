@@ -33,10 +33,20 @@ jobs:
         id: ver
         shell: pwsh
         run: |
+          # 1) тег vX.Y.Z(.R) — каноническая версия релиза
+          # 2) иначе — версия из csproj + автоинкремент Revision-билда по run_number
+          #    (исправление: раньше CI-версия была захардкожена "1.2.3.N", из-за чего
+          #     push без тега мог собрать билд СТАРЕЕ последнего релиза)
           if ("${{ github.ref }}" -like "refs/tags/v*") {
             $v = "${{ github.ref_name }}".Substring(1)
           } else {
-            $v = "1.2.3.${{ github.run_number }}"
+            [xml]$proj = Get-Content PhotoFrame/PhotoFrame.csproj
+            $raw = $proj.Project.PropertyGroup.Version | Where-Object { $_ -match '^\d+(\.\d+){1,3}$' } | Select-Object -First 1
+            if (-not $raw) { $raw = "1.2.3.0" }
+            $parts = $raw.Split('.')
+            while ($parts.Count -lt 4) { $parts += "0" }
+            $rev = [int]$parts[3] + ${{ github.run_number }}
+            $v = "$($parts[0]).$($parts[1]).$($parts[2]).$rev"
           }
           echo "version=$v" >> $env:GITHUB_OUTPUT
 

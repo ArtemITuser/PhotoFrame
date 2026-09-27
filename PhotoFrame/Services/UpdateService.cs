@@ -273,6 +273,35 @@ namespace PhotoFrame.Services
             catch { return new Version(0, 0); }
         }
 
+        /// <summary>
+        /// v1.2.3.1: версия текущего запуска с учётом build-номера CI.
+        /// При сборке через workflow InformationalVersion содержит "+build.&lt;N&gt;",
+        /// и если тег релиза == версии сборки (например v1.2.3.0), Revision заменяется
+        /// на build-номер — иначе приложение «не видит» свежий CI-билд как обновление.
+        /// </summary>
+        public static Version GetCurrentVersion()
+        {
+            var asm = Assembly.GetExecutingAssembly();
+            var v = asm.GetName().Version ?? new Version(0, 0);
+            try
+            {
+                var info = asm.GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+                if (!string.IsNullOrEmpty(info))
+                {
+                    int plus = info!.IndexOf('+');
+                    if (plus >= 0)
+                    {
+                        string meta = info.Substring(plus + 1); // "build.63" или git-sha
+                        if (meta.StartsWith("build.", StringComparison.Ordinal) &&
+                            int.TryParse(meta.Substring(6), out int b) && b > 0)
+                            v = new Version(v.Major, v.Minor, v.Build, b);
+                    }
+                }
+            }
+            catch { }
+            return v;
+        }
+
         public static void OpenReleasesPage()
         {
             try { Process.Start(new ProcessStartInfo(ReleasesUrl) { UseShellExecute = true }); }

@@ -60,7 +60,7 @@ namespace PhotoFrame
                 _cfg    = SettingsService.Load();
 
                 // Версия в заголовке из Assembly
-                var ver = Assembly.GetExecutingAssembly().GetName().Version;
+                var ver = Services.UpdateService.GetCurrentVersion();
                 TbTitleVersion.Text = ver != null
                     ? $"PhotoFrame  v{ver.Major}.{ver.Minor}.{ver.Build}.{ver.Revision}"
                     : "PhotoFrame";
@@ -665,7 +665,7 @@ namespace PhotoFrame
         {
             try
             {
-                var ver = Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0);
+                var ver = Services.UpdateService.GetCurrentVersion();
                 var res = await Services.UpdateService.CheckAsync(ver);
                 if (res.Ok && res.IsNewer && res.Update != null && _tray != null)
                 {
