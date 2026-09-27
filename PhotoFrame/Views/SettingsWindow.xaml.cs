@@ -119,10 +119,8 @@ namespace PhotoFrame.Views
 
         private void LoadAbout()
         {
-            var ver = Services.UpdateService.GetCurrentVersion();
-            if (TbAboutVersion != null && ver != null)
-                TbAboutVersion.Text =
-                    $"PhotoFrame  v{ver.Major}.{ver.Minor}.{ver.Build}.{ver.Revision}";
+            if (TbAboutVersion != null)
+                TbAboutVersion.Text = "PhotoFrame  v" + Services.UpdateService.GetDisplayVersion();
 
             // ClickOnce (.NET 8 — через переменные среды)
             if (TbClickOnceInfo != null)

@@ -59,11 +59,8 @@ namespace PhotoFrame
                 _engine = new TransitionEngine(ImgA, ImgB, RootGrid);
                 _cfg    = SettingsService.Load();
 
-                // Версия в заголовке из Assembly
-                var ver = Services.UpdateService.GetCurrentVersion();
-                TbTitleVersion.Text = ver != null
-                    ? $"PhotoFrame  v{ver.Major}.{ver.Minor}.{ver.Build}.{ver.Revision}"
-                    : "PhotoFrame";
+                // Версия в заголовке из Assembly (InformationalVersion — канон для CI-сборок)
+                TbTitleVersion.Text = "PhotoFrame  v" + Services.UpdateService.GetDisplayVersion();
 
                 RefreshDwmTheme();
                 // v3.3: применяем полный набор Aero-иконок к тулбару (PNG из

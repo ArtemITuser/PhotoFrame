@@ -280,6 +280,43 @@ namespace PhotoFrame.Services
         /// и если тег релиза == версии сборки (например v1.2.3.0), Revision заменяется
         /// на build-номер — иначе приложение «не видит» свежий CI-билд как обновление.
         /// </summary>
+        // Кэш: assembly-метаданные не меняются во время жизни процесса
+        private static string _displayVersionCache;
+
+        /// <summary>
+        /// Человекочитаемая версия для UI ("1.2.3.4"). Приоритет:
+        /// 1) InformationalVersion целиком (CI проставляет полную 4-сегментную версию релиза;
+        ///    AssemblyVersion из-за ограничения WPF WinFX.targets MC1005 всегда 3-сегментный);
+        /// 2) InformationalVersion "+build.N" -> Revision;
+        /// 3) Assembly.GetName().Version (fallback для локальных сборок).
+        /// </summary>
+        public static string GetDisplayVersion()
+        {
+            if (_displayVersionCache != null) return _displayVersionCache;
+            string result = null;
+            try
+            {
+                var asm = Assembly.GetExecutingAssembly();
+                var info = asm.GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+                if (!string.IsNullOrEmpty(info))
+                {
+                    int plus = info!.IndexOf('+');
+                    string core = (plus >= 0 ? info.Substring(0, plus) : info).Trim();
+                    // Полная 4-сегментная версия из InformationalVersion — канон для отображения
+                    if (System.Text.RegularExpressions.Regex.IsMatch(core, @"^\d+(\.\d+){3}$"))
+                        result = core;
+                }
+            }
+            catch { }
+            if (result == null)
+            {
+                var v = GetCurrentVersion();
+                result = $"{v.Major}.{v.Minor}.{v.Build}.{v.Revision}";
+            }
+            _displayVersionCache = result;
+            return result;
+        }
+
         public static Version GetCurrentVersion()
         {
             var asm = Assembly.GetExecutingAssembly();
@@ -297,10 +334,30 @@ namespace PhotoFrame.Services
                             int.TryParse(meta.Substring(6), out int b) && b > 0)
                             v = new Version(v.Major, v.Minor, v.Build, b);
                     }
+                    else
+                    {
+                        // CI задаёт InformationalVersion как полную 4-сегментную версию релиза
+                        var parsed = ParseVersionOrNull(info);
+                        if (parsed != null) v = parsed;
+                    }
                 }
             }
             catch { }
             return v;
+        }
+
+        private static Version ParseVersionOrNull(string s)
+        {
+            try
+            {
+                var parts = s.Trim().Split('.');
+                if (parts.Length < 2 || parts.Length > 4) return null;
+                var nums = new int[4];
+                for (int i = 0; i < parts.Length; i++)
+                    if (!int.TryParse(parts[i], out nums[i])) return null;
+                return new Version(nums[0], nums[1], nums[2], nums[3]);
+            }
+            catch { return null; }
         }
 
         public static void OpenReleasesPage()
