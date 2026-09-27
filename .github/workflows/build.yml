@@ -49,19 +49,24 @@ jobs:
             $v = "$($parts[0]).$($parts[1]).$($parts[2]).$rev"
           }
           echo "version=$v" >> $env:GITHUB_OUTPUT
+          # WPF (Microsoft.WinFX.targets, MC1005) принимает AssemblyVersion ТОЛЬКО вида Major.Minor.Build
+          # (Revision должен быть 0/отсутствовать). SDK по умолчанию выводит AssemblyVersion из Version,
+          # поэтому для 4-сегментной CI-версии явно задаём первые 3 сегмента.
+          $av = ($v.Split('.') + @('0','0','0'))[0..2] -join '.'
+          echo "assemblyVersion=$av" >> $env:GITHUB_OUTPUT
 
       - name: Restore
         run: dotnet restore ${{ env.PROJECT }}
 
       - name: Build
-        run: dotnet build ${{ env.PROJECT }} -c Release -p:Version=${{ steps.ver.outputs.version }} --no-restore
+        run: dotnet build ${{ env.PROJECT }} -c Release -p:Version=${{ steps.ver.outputs.version }} -p:AssemblyVersion=${{ steps.ver.outputs.assemblyVersion }} -p:FileVersion=${{ steps.ver.outputs.version }} -p:InformationalVersion="${{ steps.ver.outputs.version }}" --no-restore
 
       - name: Publish (self-contained, single exe folder)
         run: >
           dotnet publish ${{ env.PROJECT }} -c Release
           -r ${{ matrix.arch }} --self-contained true
           -p:PublishSingleFile=false
-          -p:Version=${{ steps.ver.outputs.version }}
+          -p:Version=${{ steps.ver.outputs.version }} -p:AssemblyVersion=${{ steps.ver.outputs.assemblyVersion }} -p:FileVersion=${{ steps.ver.outputs.version }} -p:InformationalVersion="${{ steps.ver.outputs.version }}"
           -o publish/${{ matrix.arch }}
 
       - name: Upload binary artifact
