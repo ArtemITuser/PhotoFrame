@@ -48,17 +48,16 @@ namespace PhotoFrame.Services
         {
             try
             {
-                int len = 0;
-                if (GetCurrentProcessPackageId(IntPtr.Zero, ref len) == 0 && len > 0) return true;
-                var buf = new char[len];
-                GetCurrentProcessPackageId(buf, ref len);
+                uint len = 0;
+                // двухпроходный вызов: первый возвращает ERROR_INSUFFICIENT_BUFFER(122), если процесс упакован
+                GetCurrentProcessPackageId(null, ref len);
                 return len > 0;
             }
             catch { return false; }
         }
 
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
-        private static extern int GetCurrentProcessPackageId(char[] buffer, ref int length);
+        private static extern int GetCurrentProcessPackageId(string? buffer, ref uint length);
 
         /// <summary>Приблизительная локация по часовому поясу (без сетевых запросов). GPS-метаданные фото — приоритет выше по коду.</summary>
         public static System.Threading.Tasks.Task<(double lat, double lon)?> TryGetApproxLocationAsync()
