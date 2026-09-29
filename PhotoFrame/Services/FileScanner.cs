@@ -43,15 +43,18 @@ namespace PhotoFrame.Services
         public static Task<ScanResult> ScanAsync(
             IEnumerable<string> paths,
             bool recursive,
-            Action<string>? progress = null)
+            Action<string>? progress = null,
+            System.Threading.CancellationToken cancellationToken = default)
         {
             return Task.Run(() =>
             {
+                var token = cancellationToken;
                 var photos = new List<PhotoInfo>();
                 int totalFiles = 0, dirs = 0;
 
                 foreach (var root in paths)
                 {
+                    token.ThrowIfCancellationRequested();
                     if (!Directory.Exists(root)) continue;
                     Walk(root, recursive, photos, ref totalFiles, ref dirs, progress);
                 }

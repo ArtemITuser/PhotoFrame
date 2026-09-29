@@ -90,8 +90,11 @@ namespace PhotoFrame.Services
             BitmapSource   newSource,
             TransitionType type,
             double         durationSec,
-            Action?        onCompleted = null)
+            Action?        onCompleted = null,
+            bool           allowAdvanced = false)
         {
+            // Free-сборка: allowAdvanced принимается для совместимости вызовов b62; Pro-гейт живёт в internal.
+            _ = allowAdvanced;
             if (_isTransitioning) return;
             _isTransitioning = true;
 

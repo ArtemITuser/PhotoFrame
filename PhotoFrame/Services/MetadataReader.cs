@@ -12,6 +12,26 @@ namespace PhotoFrame.Services
 {
     public static class MetadataReader
     {
+        /// <summary>Пакетное заполнение DateTaken (для сортировок по дате). Прогресс: выполнено из total.</summary>
+        public static async System.Threading.Tasks.Task PopulateDatesAsync(
+            System.Collections.Generic.IList<PhotoInfo> photos,
+            System.Action<int, int>? progress = null,
+            System.Threading.CancellationToken cancellationToken = default)
+        {
+            int done = 0;
+            await System.Threading.Tasks.Task.Run(() =>
+            {
+                foreach (var p in photos)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (!p.MetadataLoaded) Populate(p);
+                    done++;
+                    if (done % 50 == 0) progress?.Invoke(done, photos.Count);
+                }
+            }, cancellationToken);
+            progress?.Invoke(done, photos.Count);
+        }
+
         /// <summary>
         /// Читает метаданные EXIF из файла и заполняет поля DateTaken,
         /// Latitude и Longitude объекта PhotoInfo.
