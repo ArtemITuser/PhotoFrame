@@ -6,7 +6,6 @@
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
     <security>
       <requestedPrivileges xmlns="urn:schemas-microsoft-com:asm.v3">
-        <!-- Запрашиваем только права пользователя (не администратора) -->
         <requestedExecutionLevel level="asInvoker" uiAccess="false"/>
       </requestedPrivileges>
     </security>
@@ -19,20 +18,6 @@
     </application>
   </compatibility>
 
-  <!-- Per-Monitor DPI v2 — чёткое отображение на HiDPI-мониторах -->
-  <application xmlns="urn:schemas-microsoft-com:asm.v3">
-    <windowsSettings>
-      <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">
-        PerMonitorV2
-      </dpiAwareness>
-      <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">
-        true/pm
-      </dpiAware>
-      <!-- Поддержка GDI-масштабирования для контролов WinForms (FolderBrowserDialog) -->
-      <gdiScaling xmlns="http://schemas.microsoft.com/SMI/2017/WindowsSettings">
-        true
-      </gdiScaling>
-    </windowsSettings>
-  </application>
+  <!-- DPI задаётся через ApplicationHighDpiMode в .csproj (убирает WFAC0) -->
 
 </assembly>

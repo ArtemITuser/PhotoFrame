@@ -530,7 +530,7 @@ namespace PhotoFrame.Views
             try
             {
                 Collect();
-                SystemIntegration.SetAutostart(ChkAutorun?.IsChecked == true);
+                SystemIntegration.SetAutostart(ChkAutorun?.IsChecked == true, out _);
                 if (_w.RegisterAsScreensaver)
                     SystemIntegration.SetScreensaverDelay(_w.ScreensaverDelayMinutes);
                 Result = _w; DialogResult = true;

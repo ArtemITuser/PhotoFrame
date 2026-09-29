@@ -1,0 +1,116 @@
+<!-- Views/DeviceBrowserWindow.xaml — v1.2 (build 57)
+     Просмотр иерархической ФС подключённых по USB устройств
+     (Windows 10 Mobile / Lumia, Android, iOS) и импорт фото из выбранной папки.
+     build 53: исправлена возможная обрезка глифа иконки «Обновить»
+     (Height="13" → FontSize+VerticalAlignment, см. CHANGELOG.md).
+-->
+<Window x:Class="PhotoFrame.Views.DeviceBrowserWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Устройства — PhotoFrame"
+        Width="560" Height="520"
+        MinWidth="440" MinHeight="380"
+        WindowStyle="SingleBorderWindow"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource DialogBgBrush}"
+        Loaded="OnLoaded">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Margin="0,0,0,10">
+            <TextBlock Text="Подключённые устройства" FontSize="16" FontWeight="SemiBold"
+                       Foreground="{DynamicResource TextPrimary}"/>
+            <TextBlock TextWrapping="Wrap" FontSize="11" Margin="0,4,0,0"
+                       Foreground="{DynamicResource TextSecondary}"
+                       Text="Lumia (Windows 10 Mobile), Android, iPhone/iPad — подключите по USB и разрешите доступ к файлам на устройстве."/>
+        </StackPanel>
+
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                    CornerRadius="4" Background="{DynamicResource InputBgBrush}">
+                <Grid>
+                    <TreeView x:Name="DeviceTree" Background="Transparent" BorderThickness="0"
+                              SelectedItemChanged="OnTreeSelectionChanged"/>
+                    <StackPanel x:Name="LoadingPanel" HorizontalAlignment="Center"
+                                VerticalAlignment="Center" Visibility="Collapsed">
+                        <TextBlock Text="Поиск устройств…" FontSize="13"
+                                   Foreground="{DynamicResource TextSecondary}"/>
+                    </StackPanel>
+                    <TextBlock x:Name="TbNoDevices" HorizontalAlignment="Center"
+                               VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="360"
+                               TextAlignment="Center" FontSize="13" Visibility="Collapsed"
+                               Foreground="{DynamicResource TextSecondary}"
+                               Text="Устройства не найдены. Подключите телефон по USB и разблокируйте экран, затем нажмите «Обновить»."/>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <StackPanel Grid.Row="2" Margin="0,10,0,0">
+            <TextBlock x:Name="TbSelectedInfo" FontSize="12"
+                       Foreground="{DynamicResource TextPrimary}" Margin="0,0,0,4"/>
+            <!-- build 57: путь назначения импорта — по умолчанию Pictures\{устройство},
+                 редактируемый; кнопка copy — только иконка, без подписи, рядом с полем. -->
+            <Grid x:Name="ImportDestPanel" Visibility="Collapsed" Margin="0,0,0,6">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="Куда:" VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextSecondary}" Margin="0,0,6,0"/>
+                <TextBox x:Name="TbImportDest" Grid.Column="1" VerticalAlignment="Center"
+                         Foreground="{DynamicResource TextPrimary}"/>
+                <Button x:Name="BtnBrowseImportDest" Grid.Column="2"
+                        Style="{DynamicResource SecondaryButton}"
+                        Width="32" Height="32" Padding="0" Margin="6,0,0,0"
+                        Click="OnBrowseImportDest" ToolTip="Выбрать папку назначения в проводнике">
+                    <TextBlock Text="&#xE8A5;" FontFamily="Segoe MDL2 Assets" FontSize="14"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Button>
+                <Button x:Name="BtnCopyImportDest" Grid.Column="3"
+                        Style="{DynamicResource SecondaryButton}"
+                        Width="32" Height="32" Padding="0" Margin="6,0,0,0"
+                        Click="OnCopyImportDest" ToolTip="Скопировать путь папки">
+                    <TextBlock Text="&#xE8C8;" FontFamily="Segoe MDL2 Assets" FontSize="14"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Button>
+            </Grid>
+            <ProgressBar x:Name="ImportProgress" Height="4" Visibility="Collapsed"
+                         IsIndeterminate="True" Margin="0,0,0,4"/>
+            <TextBlock x:Name="TbImportStatus" FontSize="11" TextWrapping="Wrap"
+                       Foreground="{DynamicResource TextSecondary}"/>
+        </StackPanel>
+
+        <Grid Grid.Row="3" Margin="0,14,0,0">
+            <Button Style="{DynamicResource SecondaryButton}" HorizontalAlignment="Left" Click="OnRefresh">
+                <StackPanel Orientation="Horizontal">
+                    <!-- Иконка обновления (&#xE72C;). build 53: было Height="13" —
+                         жёсткая высота без учёта реальной высоты строки шрифта
+                         могла обрезать глиф снизу/сверху; используем FontSize +
+                         VerticalAlignment, как и остальные MDL2-иконки в приложении. -->
+                    <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" FontSize="13"
+                               VerticalAlignment="Center" Margin="0,0,5,0"/>
+                    <TextBlock Text="Обновить" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Button>
+
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="Отмена" Style="{DynamicResource SecondaryButton}"
+                        Margin="0,0,8,0" Click="OnCancel"/>
+                <Button x:Name="BtnImport" Content="Импортировать и добавить в источники"
+                        Style="{DynamicResource AccentButton}" IsEnabled="False"
+                        Click="OnImport"/>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

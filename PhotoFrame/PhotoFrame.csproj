@@ -12,10 +12,10 @@
 
     <!-- Единственное место для версии. Читается через Assembly.GetExecutingAssembly() -->
     <!-- v3.3: единая версия Free-сборки; CI переопределяет через -p:Version=... -->
-    <Version>1.2.3.3</Version>
-    <AssemblyVersion>1.2.3</AssemblyVersion>
-    <FileVersion>1.2.3.3.0</FileVersion>
-    <InformationalVersion>1.2.3.3</InformationalVersion>
+    <!-- Единственное место версии. CI переопределяет Version/AssemblyVersion/FileVersion/
+         InformationalVersion явно из тега (-p:...), поэтому здесь не задаём AssemblyVersion/
+         FileVersion/InformationalVersion — их хардкод приводил к устаревшей версии в UI. -->
+    <Version>1.2.4.0</Version>
 
     <Product>PhotoFrame — Фоторамка</Product>
     <Company>ArtemITuser</Company>
@@ -31,6 +31,12 @@
   <ItemGroup>
     <!-- System.Management для WMI DeviceChangeEvent (определение съёмных носителей) -->
     <PackageReference Include="System.Management" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- System.Management для WMI; Microsoft.CSharp для dynamic JSON в новых сервисах
+         (ProfileService/SmartCollectionService/ReverseGeocodeService перенесены из b62). -->
+    <PackageReference Include="Microsoft.CSharp" Version="4.7.0" />
   </ItemGroup>
 
   <ItemGroup>
