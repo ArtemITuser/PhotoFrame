@@ -1,0 +1,259 @@
+<!-- MainPage.xaml — UWP-порт MainWindow.xaml (PhotoFrame v1.2.2.0), UI 1:1.
+     Адаптации под UWP/WinUI2 и требования заказчика:
+       * Window → Page; Grid-разметка, имена элементов, стили — сохранены;
+       * StackPanel Orientation="Vertical" → Windows.UI.Xaml默认 Vertical (свойство опущено);
+       * Effect=DropShadowEffect у TxtCount → чёрный «тень»-TextBlock (TbCountShadow);
+       * Кнопка настроек (⚙) перенесена в НИЖНЮЮ ПОЛОСУ гамбургер-меню (SplitView),
+         настройки открываются как отдельное подокно (Frame + SettingsView поверх). -->
+<Page
+    x:Class="PhotoFrameUwp.MainPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:contract7NotPresent="http://schemas.microsoft.com/winfx/2006/xaml/presentation?IsApiContractNotPresent(Windows.Foundation.UniversalApiContract,7)"
+    xmlns:contract7Present="http://schemas.microsoft.com/winfx/2006/xaml/presentation?IsApiContractPresent(Windows.Foundation.UniversalApiContract,7)"
+    xmlns:controls="using:Microsoft.UI.Xaml.Controls"
+    Background="{DynamicResource BgBrush}">
+
+    <!-- Гамбургер-меню (WinUI2 SplitView): контент = слайдшоу, нижняя полоса = панель управления -->
+    <SplitView x:Name="HamburgerHost"
+               DisplayMode="Overlay"
+               PanePlacement="Bottom"
+               OpenPaneLength="220"
+               contract7Present:PaneBackground="{x:Null}"
+               contract7NotPresent:PaneBackground="Transparent">
+
+        <!-- ═══ ПАНЕЛЬ (нижняя полоса меню) ═══ -->
+        <SplitView.Pane>
+            <Border Background="{DynamicResource Surface2Brush}"
+                    BorderBrush="{DynamicResource BorderBrush}"
+                    BorderThickness="0,1,0,0" Padding="8,10">
+                <StackPanel>
+                    <TextBlock Text="УПРАВЛЕНИЕ Фоторамкой" Style="{StaticResource SectionHeader}" Margin="4,0,0,6"/>
+
+                    <!-- Кнопка настроек — как отдельное подокно (типично для UWP) -->
+                    <Button x:Name="BtnSettingsPane" Style="{StaticResource AccentButton}"
+                            HorizontalAlignment="Stretch" Height="44" Margin="0,2"
+                            Click="OnOpenSettings">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets" FontSize="16" VerticalAlignment="Center"/>
+                            <TextBlock Text="  Настройки" Foreground="White" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <Button x:Name="BtnAddFolderPane" Style="{StaticResource SecondaryButton}"
+                            HorizontalAlignment="Stretch" Height="44" Margin="0,2"
+                            Click="OnAddFolder">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE8B7;" FontFamily="Segoe MDL2 Assets" FontSize="16" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextPrimary}"/>
+                            <TextBlock Text="  Добавить папку…" Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <Button x:Name="BtnTogglePlayPane" Style="{StaticResource SecondaryButton}"
+                            HorizontalAlignment="Stretch" Height="44" Margin="0,2"
+                            Click="OnTogglePlay">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock x:Name="TbPlayGlyph" Text="&#xE769;" FontFamily="Segoe MDL2 Assets" FontSize="16" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextPrimary}"/>
+                            <TextBlock x:Name="TbPlayLabel" Text="  Пауза" Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <Button x:Name="BtnThemePane" Style="{StaticResource SecondaryButton}"
+                            HorizontalAlignment="Stretch" Height="44" Margin="0,2"
+                            Click="OnCycleTheme">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE771;" FontFamily="Segoe MDL2 Assets" FontSize="16" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextPrimary}"/>
+                            <TextBlock Text="  Тема: авто" Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <Button x:Name="BtnExitPane" Style="{StaticResource SecondaryButton}"
+                            HorizontalAlignment="Stretch" Height="44" Margin="0,2"
+                            Click="OnExitApp">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE711;" FontFamily="Segoe MDL2 Assets" FontSize="16" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextPrimary}"/>
+                            <TextBlock Text="  Выход" Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Border>
+        </SplitView.Pane>
+
+        <!-- ═══ КОНТЕНТ (то же дерево, что MainWindow.xaml v1.2.2.0) ═══ -->
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>   <!-- заголовок -->
+                <RowDefinition Height="*"/>      <!-- фото -->
+                <RowDefinition Height="Auto"/>   <!-- панель управления -->
+            </Grid.RowDefinitions>
+
+            <!-- ── Заголовок приложения ──────────────────────────────────────── -->
+            <Grid Grid.Row="0" x:Name="TitleBarArea" Background="{DynamicResource OverlayBgBrush}" Padding="12,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>   <!-- гамбургер -->
+                    <ColumnDefinition Width="Auto"/>   <!-- иконка -->
+                    <ColumnDefinition Width="*"/>      <!-- название -->
+                    <ColumnDefinition Width="Auto"/>   <!-- статус -->
+                </Grid.ColumnDefinitions>
+
+                <!-- Гамбургер-кнопка: открывает нижнюю полосу меню -->
+                <Button Grid.Column="0" x:Name="BtnHamburger" Style="{StaticResource IconButton}"
+                        Width="44" Height="44" Margin="0,0,4,0"
+                        ToolTipService.ToolTip="Меню" Click="OnToggleMenu">
+                    <TextBlock Text="&#xE700;" FontFamily="Segoe MDL2 Assets" FontSize="18" Foreground="White"/>
+                </Button>
+
+                <Image Grid.Column="1" Source="ms-appx:///Assets/102.png" Width="28" Height="28"
+                       VerticalAlignment="Center" Margin="0,0,10,0"/>
+
+                <TextBlock Grid.Column="2" Text="PhotoFrame — Фоторамка"
+                           FontSize="16" FontWeight="SemiBold"
+                           Foreground="{DynamicResource TextPrimary}"
+                           VerticalAlignment="Center"/>
+
+                <TextBlock Grid.Column="3" x:Name="TxtStatus"
+                           Text="—" FontSize="12"
+                           Foreground="{DynamicResource TextSecondary}"
+                           VerticalAlignment="Center" Margin="10,0,0,0"
+                           MaxWidth="500" TextTrimming="CharacterEllipsis"/>
+            </Grid>
+
+            <!-- ── Область фотографии ────────────────────────────────────────── -->
+            <Grid Grid.Row="1" x:Name="PhotoContainer" Background="Black">
+
+                <!-- Два слоя Image для переходов -->
+                <Image x:Name="ImgA" Stretch="Uniform" Opacity="1"/>
+                <Image x:Name="ImgB" Stretch="Uniform" Opacity="0"/>
+
+                <!-- Оверлей: директория — левый верхний угол -->
+                <Border x:Name="DirBadge" Style="{StaticResource OverlayBadge}"
+                        HorizontalAlignment="Left" VerticalAlignment="Top"
+                        Margin="12,12,0,0" Visibility="Collapsed">
+                    <TextBlock x:Name="TxtDir" Style="{StaticResource OverlayText}" MaxWidth="500"
+                               TextTrimming="CharacterEllipsis"/>
+                </Border>
+
+                <!-- Оверлей: дата съёмки — правый нижний угол -->
+                <Border x:Name="DateBadge" Style="{StaticResource OverlayBadge}"
+                        HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                        Margin="0,0,12,12" Visibility="Collapsed">
+                    <TextBlock x:Name="TxtDate" Style="{StaticResource OverlayText}"/>
+                </Border>
+
+                <!-- Оверлей: геолокация — верх по центру -->
+                <Border x:Name="LocBadge" Style="{StaticResource OverlayBadge}"
+                        HorizontalAlignment="Center" VerticalAlignment="Top"
+                        Margin="0,12,0,0" Visibility="Collapsed">
+                    <TextBlock x:Name="TxtLocation" Style="{StaticResource OverlayText}"/>
+                </Border>
+
+                <!-- Счётчик фото — DropShadowEffect(WPF) заменён тень-дублёром (UWP) -->
+                <Grid HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,12,12,0">
+                    <TextBlock x:Name="TbCountShadow" Text=""
+                               FontSize="13" FontFamily="Segoe UI" Foreground="#E0000000"
+                               Margin="1,1,0,0"/>
+                    <TextBlock x:Name="TxtCount" Text=""
+                               FontSize="13" FontFamily="Segoe UI" Foreground="White"/>
+                </Grid>
+
+                <!-- Центральное сообщение -->
+                <Border x:Name="EmptyMsg" Background="{DynamicResource OverlayBgBrush}"
+                        CornerRadius="8" Padding="28,20"
+                        HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <StackPanel>
+                        <TextBlock Text="Нет фотографий"
+                                   FontSize="20" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextPrimary}"
+                                   HorizontalAlignment="Center"/>
+                        <TextBlock x:Name="EmptyHint"
+                                   Text="Нажмите кнопку «Добавить папку» чтобы выбрать источник."
+                                   FontSize="13" Margin="0,8,0,0"
+                                   Foreground="{DynamicResource TextSecondary}"
+                                   HorizontalAlignment="Center" TextWrapping="Wrap" MaxWidth="300"
+                                   TextAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- ── Панель управления (видна только на паузе / при наведении) ── -->
+            <Border Grid.Row="2" x:Name="ControlPanel"
+                    Background="{DynamicResource ToolbarBgBrush}"
+                    Padding="10,8" Visibility="Collapsed">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Play / Pause -->
+                    <Button Grid.Column="0" x:Name="BtnPlayPause"
+                            Style="{StaticResource IconButton}"
+                            Width="44" Height="44" Margin="4,0"
+                            ToolTipService.ToolTip="Старт / Пауза"
+                            Click="OnTogglePlay"/>
+
+                    <!-- Предыдущее -->
+                    <Button Grid.Column="1" x:Name="BtnPrev"
+                            Style="{StaticResource IconButton}"
+                            Width="44" Height="44" Margin="4,0"
+                            ToolTipService.ToolTip="Предыдущее фото"
+                            Click="OnPrevious"/>
+
+                    <!-- Интервал (Slider) -->
+                    <StackPanel Grid.Column="2" Orientation="Horizontal"
+                                HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <TextBlock Text="Интервал:" FontSize="12"
+                                   Foreground="{DynamicResource TextSecondary}"
+                                   VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <Slider x:Name="SldInterval" Minimum="1" Maximum="120" Value="5"
+                                Width="160" VerticalAlignment="Center"
+                                ValueChanged="OnIntervalChanged"/>
+                        <TextBlock x:Name="TxtInterval" Text="5 с" FontSize="12"
+                                   Foreground="{DynamicResource TextSecondary}"
+                                   VerticalAlignment="Center" Margin="8,0,0,0"/>
+                    </StackPanel>
+
+                    <!-- Следующее -->
+                    <Button Grid.Column="3" x:Name="BtnNext"
+                            Style="{StaticResource IconButton}"
+                            Width="44" Height="44" Margin="4,0"
+                            ToolTipService.ToolTip="Следующее фото"
+                            Click="OnNext"/>
+
+                    <!-- Перемешать / по порядку -->
+                    <Button Grid.Column="4" x:Name="BtnShuffle"
+                            Style="{StaticResource IconButton}"
+                            Width="44" Height="44" Margin="4,0"
+                            ToolTipService.ToolTip="Перемешать / по порядку"
+                            Click="OnToggleShuffle"/>
+
+                    <!-- Добавить папку -->
+                    <Button Grid.Column="5" x:Name="BtnAddFolder"
+                            Style="{StaticResource IconButton}"
+                            Width="44" Height="44" Margin="4,0"
+                            ToolTipService.ToolTip="Добавить папку"
+                            Click="OnAddFolder"/>
+                </Grid>
+            </Border>
+
+            <!-- Подокно настроек (типичная UWP-панель поверх контента, закрывается кнопкой ✕) -->
+            <Grid x:Name="SettingsPopupLayer" Grid.RowSpan="3" Visibility="Collapsed"
+                  Background="#80000000">
+                <Border Background="{DynamicResource DialogBgBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                        CornerRadius="6" MaxWidth="730" MaxHeight="620"
+                        HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <Frame x:Name="SettingsFrame"/>
+                </Border>
+            </Grid>
+        </Grid>
+    </SplitView>
+</Page>

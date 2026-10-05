@@ -1,0 +1,263 @@
+<!-- Views/SettingsView.xaml — UWP-порт SettingsWindow.xaml (PhotoFrame v1.2.2.0).
+     UI 1:1: навигация слева + StackPanel-секции справа, все контролы/подписи/тултипы сохранены.
+     Адаптации: Window → Page (открывается как подокно из гамбургер-меню),
+     ToolTip → нет в UWP (подсказки вынесены в подпись «ⓘ …»), Grid.IsSharedSizeScope есть. -->
+<Page
+    x:Class="PhotoFrameUwp.Views.SettingsView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Background="{DynamicResource DialogBgBrush}">
+
+    <Grid Margin="0">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>   <!-- заголовок окна настроек -->
+            <RowDefinition Height="*"/>      <!-- контент -->
+            <RowDefinition Height="Auto"/>   <!-- кнопки OK/Cancel -->
+        </Grid.RowDefinitions>
+
+        <!-- ── Заголовок подокна + крестик (типичный UWP Flyout-стиль) ──────────── -->
+        <Grid Grid.Row="0" Padding="16,12" Background="{DynamicResource Surface2Brush}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="&#xE713;" FontFamily="Segoe MDL2 Assets"
+                       FontSize="18" VerticalAlignment="Center"
+                       Foreground="{DynamicResource AccentBrush}"/>
+            <TextBlock Grid.Column="1" Text="Настройки PhotoFrame"
+                       FontSize="15" FontWeight="SemiBold" Margin="10,0,0,0"
+                       Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center"/>
+            <Button Grid.Column="2" x:Name="BtnClose" Style="{StaticResource SecondaryButton}"
+                    Width="36" Height="36" Click="OnCancel" Content="✕"/>
+        </Grid>
+
+        <!-- ── Контент: навигация + секции ──────────────────────────────────────── -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="170"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <ListBox x:Name="NavList" Grid.Column="0" BorderThickness="0"
+                     SelectionChanged="OnNavChanged" Padding="4,8"
+                     Background="{DynamicResource Surface2Brush}">
+                <ListBoxItem Style="{StaticResource NavItem}" Content="Источники"/>
+                <ListBoxItem Style="{StaticResource NavItem}" Content="Слайдшоу"/>
+                <ListBoxItem Style="{StaticResource NavItem}" Content="Переходы"/>
+                <ListBoxItem Style="{StaticResource NavItem}" Content="Интерфейс"/>
+                <ListBoxItem Style="{StaticResource NavItem}" Content="Питание"/>
+                <ListBoxItem Style="{StaticResource NavItem}" Content="О программе"/>
+            </ListBox>
+
+            <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto" Padding="16,8">
+                <StackPanel x:Name="SectionsHost" Grid.IsSharedSizeScope="True">
+
+                    <!-- ════ ИСТОЧНИКИ ════════════════════════════════════════════ -->
+                    <StackPanel x:Name="SrcSection">
+                        <TextBlock Text="ИСТОЧНИКИ ФОТОГРАФИЙ" Style="{StaticResource SectionHeader}"/>
+
+                        <Grid Margin="0,4,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <ComboBox Grid.Column="0" x:Name="CmbPaths" Height="30"
+                                      PlaceholderText="(папки не добавлены)"/>
+                            <Button Grid.Column="1" x:Name="BtnAddPath" Style="{StaticResource SecondaryButton}"
+                                    Content="Добавить…" Margin="6,0,0,0" Click="OnAddPath"/>
+                            <Button Grid.Column="2" x:Name="BtnRemovePath" Style="{StaticResource SecondaryButton}"
+                                    Content="Удалить" Margin="6,0,0,0" Click="OnRemovePath"/>
+                        </Grid>
+
+                        <CheckBox x:Name="ChkSubdirs" Content="Включая вложенные папки" Margin="0,4"/>
+                        <CheckBox x:Name="ChkWatchRemovable" Content="Автоматически добавлять съёмные носители (USB/SD)" Margin="0,4"/>
+                        <CheckBox x:Name="ChkSuggestRemovable" Content="Предлагать выбор при подключении новой карты / флешки" Margin="0,4"/>
+
+                        <Border Background="{DynamicResource Surface2Brush}" CornerRadius="4"
+                                Padding="10,6" Margin="0,8,0,0">
+                            <TextBlock x:Name="TxtScanSummary" Text="—" FontSize="12"
+                                       Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap"/>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- ════ СЛАЙДШОУ ═════════════════════════════════════════════ -->
+                    <StackPanel x:Name="SsSection" Visibility="Collapsed">
+                        <TextBlock Text="СЛАЙДШОУ" Style="{StaticResource SectionHeader}"/>
+
+                        <Grid Margin="0,4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="Lbl"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Интервал (сек):" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <Slider x:Name="SldSec" Minimum="1" Maximum="120" Width="180" ValueChanged="OnSecChanged"/>
+                                <TextBlock x:Name="TxtSecVal" Text="5 с" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <Grid Margin="0,4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="Lbl"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Режим:" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                            <ComboBox Grid.Column="1" x:Name="CmbPlayMode" Height="30" SelectionChanged="OnPlayModeChanged"/>
+                        </Grid>
+
+                        <CheckBox x:Name="ChkLoop" Content="Зациклить показ (повторять до остановки)" Margin="0,4"/>
+                        <CheckBox x:Name="ChkAutoStart" Content="Автозапуск слайдшоу при старте приложения" Margin="0,4"/>
+                    </StackPanel>
+
+                    <!-- ════ ПЕРЕХОДЫ ═════════════════════════════════════════════ -->
+                    <StackPanel x:Name="TrSection" Visibility="Collapsed">
+                        <TextBlock Text="ПЕРЕХОДЫ МЕЖДУ ФОТО" Style="{StaticResource SectionHeader}"/>
+
+                        <Grid Margin="0,4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="Lbl"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Тип перехода:" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                            <ComboBox Grid.Column="1" x:Name="CmbTransition" Height="30" SelectionChanged="OnTransitionChanged"/>
+                        </Grid>
+
+                        <Grid Margin="0,4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="Lbl"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Длительность (с):" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <Slider x:Name="SldDur" Minimum="0.2" Maximum="3" SmallChange="0.1" LargeChange="0.5" Width="180" ValueChanged="OnDurChanged"/>
+                                <TextBlock x:Name="TxtDurVal" Text="0.8 с" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <Border Background="{DynamicResource Surface2Brush}" CornerRadius="4"
+                                Padding="10,6" Margin="0,8,0,0">
+                            <TextBlock x:Name="TxtTransitionHint" Text="Совет: на ARM32-телефоне тяжёлые переходы (Mosaic, Spiral) могут тормозить — используйте Fade/Slide."
+                                       FontSize="12" Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap"/>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- ════ ИНТЕРФЕЙС ═════════════════════════════════════════════ -->
+                    <StackPanel x:Name="UiSection" Visibility="Collapsed">
+                        <TextBlock Text="ИНТЕРФЕЙС" Style="{StaticResource SectionHeader}"/>
+
+                        <Grid Margin="0,4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="Lbl"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Тема:" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                            <ComboBox Grid.Column="1" x:Name="CmbTheme" Height="30" SelectionChanged="OnThemeChanged"/>
+                        </Grid>
+
+                        <CheckBox x:Name="ChkShowDir" Content="Показывать имя папки поверх фото" Margin="0,4"/>
+                        <CheckBox x:Name="ChkShowDate" Content="Показывать дату съёмки (EXIF)" Margin="0,4"/>
+                        <CheckBox x:Name="ChkShowLoc" Content="Показывать геолокацию (GPS координаты)" Margin="0,4"/>
+
+                        <Grid Margin="0,4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="Lbl"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Размер шрифта:" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <Slider x:Name="SldFont" Minimum="10" Maximum="28" Width="180" ValueChanged="OnFontChanged"/>
+                                <TextBlock x:Name="TxtFontVal" Text="14 px" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <CheckBox x:Name="ChkMica" Content="Эффект прозрачности панелей (имитация acrylic для Win10 Mobile)" Margin="0,4"/>
+                        <CheckBox x:Name="ChkTray" Content="Сворачивать в трей при закрытии (только Desktop; недоступно в Mobile)" Margin="0,4"/>
+                    </StackPanel>
+
+                    <!-- ════ ПИТАНИЕ ═══════════════════════════════════════════════ -->
+                    <StackPanel x:Name="PwSection" Visibility="Collapsed">
+                        <TextBlock Text="ПИТАНИЕ И ПОЛНОЭКРАННЫЙ РЕЖИМ" Style="{StaticResource SectionHeader}"/>
+
+                        <CheckBox x:Name="ChkPreventSleep" Content="Не давать телефону/экрану уснуть во время показа" Margin="0,4"/>
+
+                        <Grid Margin="0,4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="Lbl"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Гасить экран через (мин):" VerticalAlignment="Center" Margin="0,0,10,0" TextWrapping="Wrap" MaxWidth="150"/>
+                            <ComboBox Grid.Column="1" x:Name="CmbMonitorOff" Height="30" SelectionChanged="OnMonitorOffChanged"/>
+                        </Grid>
+
+                        <Grid Margin="0,4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="Lbl"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Сон системы через (мин):" VerticalAlignment="Center" Margin="0,0,10,0" TextWrapping="Wrap" MaxWidth="150"/>
+                            <ComboBox Grid.Column="1" x:Name="CmbSleep" Height="30" SelectionChanged="OnSleepChanged"/>
+                        </Grid>
+
+                        <CheckBox x:Name="ChkScreensaver" Content="Полноэкранный режим-фоторамка (FullScreenMode вместо .scr)" Margin="0,4"/>
+
+                        <Grid Margin="0,4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="Lbl"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Задержка (мин):" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                            <ComboBox Grid.Column="1" x:Name="CmbSsDelay" Height="30" SelectionChanged="OnSsDelayChanged"/>
+                        </Grid>
+
+                        <Border Background="{DynamicResource Surface2Brush}" CornerRadius="4"
+                                Padding="10,6" Margin="0,8,0,0">
+                            <TextBlock Text="ⓘ В UWP-сборке регистрация .scr через реестр/System32 и powrprof.dll недоступны (песочница). Используются FullScreenMode и DisplayRequest."
+                                       FontSize="12" Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap"/>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- ════ О ПРОГРАММЕ ═══════════════════════════════════════════ -->
+                    <StackPanel x:Name="AbSection" Visibility="Collapsed">
+                        <TextBlock Text="О ПРОГРАММЕ" Style="{StaticResource SectionHeader}"/>
+
+                        <Image Source="ms-appx:///Assets/102.png" Width="64" Height="64"
+                               HorizontalAlignment="Left" Margin="0,6"/>
+                        <TextBlock Text="PhotoFrame — Фоторамка" FontSize="16" FontWeight="SemiBold" Margin="0,6,0,0"/>
+                        <TextBlock x:Name="TxtVersion" Text="Версия 1.2.2.0 (UWP-порт)" FontSize="13"
+                                   Foreground="{DynamicResource TextSecondary}" Margin="0,2"/>
+                        <TextBlock Text="© 2025 @ArtemITuser Ochkin Artyom" FontSize="12"
+                                   Foreground="{DynamicResource TextSecondary}" Margin="0,2"/>
+
+                        <TextBlock x:Name="TxtUpdateStatus" Text="" FontSize="12" Margin="0,8,0,0"
+                                   Foreground="{DynamicResource AccentBrush}" TextWrapping="Wrap"/>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                            <Button x:Name="BtnCheckUpdate" Style="{StaticResource AccentButton}"
+                                    Content="Проверить обновления" Click="OnCheckUpdate"/>
+                            <Button x:Name="BtnOpenGitHub" Style="{StaticResource SecondaryButton}"
+                                    Content="GitHub" Margin="8,0,0,0" Click="OnOpenGitHub"/>
+                        </StackPanel>
+
+                        <Border Background="{DynamicResource Surface2Brush}" CornerRadius="4"
+                                Padding="10,6" Margin="0,10,0,0">
+                            <TextBlock x:Name="TxtDeployInfo" Text="" FontSize="12"
+                                       Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap"/>
+                        </Border>
+                    </StackPanel>
+
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+
+        <!-- ── Нижние кнопки (как в оригинальном SettingsWindow) ────────────────── -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right"
+                    Margin="16,10" Spacing="8">
+            <Button x:Name="BtnOk" Style="{StaticResource AccentButton}"
+                    Content="OK" MinWidth="90" Click="OnOk"/>
+            <Button x:Name="BtnCancel" Style="{StaticResource SecondaryButton}"
+                    Content="Отмена" MinWidth="90" Click="OnCancel"/>
+        </StackPanel>
+    </Grid>
+</Page>

@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  PhotoFrame-UWP — манифест пакета.
+  Windows.Mobile   — телефон ARM32 (15254.603 / 15400.0), FullScreenMode (аналог скринсейвера).
+  Windows.Desktop  — ПК + Continuum (телефон → HDMI/док → десктопный UI).
+  Windows.TeamDesktop — Surface Hub (необязательно).
+  Extensions.Windows.Shell.RunAsUser — запуск из проводника по «Открыть с помощью».
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:mp="http://schemas.microsoft.com/appx/2014/phone/manifest"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:mobile="http://schemas.microsoft.com/appx/manifest/mobile/windows10"
+  IgnorableNamespaces="uap mp mobile">
+
+  <Identity
+    Name="PhotoFrameUwp.ArtemITuser"
+    Publisher="CN=ArtemITuser"
+    Version="1.2.2.0" />
+
+  <mp:PhoneIdentity PhoneProductId="7c1e2b349a5d4f60b1c73e8d5a6f9c21"
+                    PhonePublisherId="00000000000000000000000000000000"/>
+
+  <Properties>
+    <DisplayName>PhotoFrame — Фоторамка</DisplayName>
+    <PublisherDisplayName>ArtemITuser</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.ico</Logo>
+    <Description>Цифровая фоторамка с анимированными переходами (порт v1.2.2.0 на UWP/WinUI2)</Description>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Universal" MinVersion="10.0.15063.0" MaxVersionTested="10.0.16299.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="ru-RU"/>
+    <Resource Language="x-generate"/>
+  </Resources>
+
+  <Applications>
+    <Application Id="App"
+      Executable="$targetnametoken$.exe"
+      EntryPoint="PhotoFrameUwp.App">
+
+      <!-- Полноэкранный режим на телефоне: приложение занимает весь экран,
+           статус-бар скрывается — поведение «фоторамки/скринсейвера» -->
+      <uap:ApplicationExtensions>
+        <uap:Extension Category="app.extension.fullscreenmode" />
+      </uap:ApplicationExtensions>
+
+      <uap:VisualElements
+        DisplayName="PhotoFrame"
+        Description="Цифровая фоторамка с анимированными переходами"
+        BackgroundColor="black"
+        Square150x150Logo="Assets\102.png"
+        Square44x44Logo="Assets\033.png">
+        <uap:DefaultTile Wide310x150Logo="Assets\102.png"/>
+        <uap:SplashScreen Image="Assets\102.png" BackgroundColor="black"/>
+        <uap:InitialRotationPreference>
+          <!-- Ориентация не фиксируется: телефон portrait, Continuum/desktop landscape -->
+          <uap:Rotation Preference="portrait"/>
+          <uap:Rotation Preference="landscape"/>
+          <uap:Rotation Preference="portraitFlipped"/>
+          <uap:Rotation Preference="landscapeFlipped"/>
+        </uap:InitialRotationPreference>
+      </uap:VisualElements>
+
+      <!-- Запуск как «просмотр изображений» из проводника телефона -->
+      <Extensions>
+        <uap:Extension Category="windows.fileTypeAssociation">
+          <uap:FileTypeAssociation Name="photoframe">
+            <uap:SupportedFileTypes>
+              <uap:FileType>.jpg</uap:FileType>
+              <uap:FileType>.jpeg</uap:FileType>
+              <uap:FileType>.png</uap:FileType>
+              <uap:FileType>.bmp</uap:FileType>
+              <uap:FileType>.gif</uap:FileType>
+              <uap:FileType>.tiff</uap:FileType>
+              <uap:FileType>.webp</uap:FileType>
+            </uap:SupportedFileTypes>
+            <uap:DisplayName>PhotoFrame</uap:DisplayName>
+            <uap:Logo>Assets\102.png</uap:Logo>
+          </uap:FileTypeAssociation>
+        </uap:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <!-- Доступ к Pictures / съёмным носителям (SD, USB через MassStorage в Mobile) -->
+    <rescap:Capability xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+                       Name="broadFileSystemAccess"/>
+    <uap:Capability Name="picturesLibrary"/>
+    <uap:Capability Name="removableStorage"/>
+    <uap:Capability Name="sharedUserCertificates"/>
+    <!-- Сетевые проверки обновлений через GitHub API -->
+    <Capability Name="internetClient"/>
+    <!-- Блокировка дисплея от сна (DisplayRequest) — аналог SetThreadExecutionState -->
+    <DeviceCapability Name="backgroundAudioMedia"/>
+  </Capabilities>
+</Package>
