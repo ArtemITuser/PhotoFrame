@@ -303,13 +303,19 @@
                         <!-- Обновления -->
                         <TextBlock Text="ПРОВЕРКА ОБНОВЛЕНИЙ" Style="{DynamicResource SectionHeader}"/>
                         <StackPanel Orientation="Horizontal" Margin="0,6,0,8">
-                            <Button Content="Проверить (GitHub)"
+                            <Button x:Name="BtnCheckUpdates" Content="Проверить (GitHub)"
                                     Style="{DynamicResource SecondaryButton}"
                                     Margin="0,0,10,0" Click="OnCheckUpdates"/>
+                            <Button x:Name="BtnDownloadUpdate" Content="Скачать и установить"
+                                    Style="{DynamicResource SecondaryButton}"
+                                    Margin="0,0,10,0" Visibility="Collapsed"
+                                    Click="OnDownloadUpdate"/>
                             <Button Content="Страница релизов"
                                     Style="{DynamicResource SecondaryButton}"
                                     Click="OnOpenReleases"/>
                         </StackPanel>
+                        <ProgressBar x:Name="PgUpdate" Height="6" Minimum="0" Maximum="100"
+                                     Value="0" Visibility="Collapsed" Margin="0,0,0,6"/>
                         <TextBlock x:Name="TbUpdateStatus" Text=""
                                    Foreground="{DynamicResource TextSecondary}"
                                    TextWrapping="Wrap" FontSize="12" Margin="0,0,0,16"/>

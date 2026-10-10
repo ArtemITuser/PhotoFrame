@@ -1,4 +1,6 @@
-// MainWindow.xaml.cs — v3.2
+// MainWindow.xaml.cs — v3.3-sp1 (UI/функционал строго v1.2.2.0; только патчи зависаний)
+// - ПАТЧ sp1: итеративный пропуск битых файлов (нет рекурсии → нет StackOverflow/зависаний)
+// - ПАТЧ sp1: фоновая проверка обновлений GitHub Releases (BalloonTip в трее)
 // - ScanResult вместо List<PhotoInfo>: indexed photos / total files
 // - Removable media watch (WMI DeviceInsertedEvent)
 // - PlayMode 2 states: ⇄ / ↕ 
@@ -10,6 +12,7 @@ using System.Management; // for WMI removable drive detection
 using System.Reflection;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
@@ -89,6 +92,11 @@ namespace PhotoFrame
                     await ReloadPhotosAsync();
                 else
                     ShowEmpty();
+
+                // ПАТЧ 1.2.2.0-sp1: фоновая проверка обновлений (не блокирует старт;
+                // при новой версии — BalloonTip в системном трее).
+                if (_cfg.AutoCheckUpdates)
+                    _ = CheckUpdatesSilentlyAsync();
             }
             catch (Exception ex)
             {
@@ -125,14 +133,32 @@ namespace PhotoFrame
             if (!photo.DateTaken.HasValue && photo.Latitude == null)
                 await Task.Run(() => MetadataReader.Populate(photo));
 
-            var bmp = await Task.Run(() => LoadBitmap(photo.FilePath));
-            if (bmp == null)
+            // ПАТЧ 1.2.2.0-sp1: вместо рекурсивного само-вызова при битом файле —
+            // итеративный цикл с лимитом MaxCorruptSkip. Рекурсия на серии повреждённых
+            // файлов давала StackOverflowException («вылет через некоторое время работы»),
+            // а без лимита на полностью повреждённой папке — бесконечное «зависание».
+            for (int attempt = 0; attempt < MaxCorruptSkip; attempt++)
             {
-                if (_playlist.Count > 1)
-                { _playlist.Next(_cfg.PlayMode, _cfg.LoopSlideshow); await ShowCurrentAsync(animate); }
-                return;
+                var bmp = await Task.Run(() => LoadBitmap(photo.FilePath));
+                if (bmp != null)
+                {
+                    RenderCurrent(bmp, animate);
+                    return;
+                }
+                if (_playlist.Count <= 1) break;
+                if (_playlist.Next(_cfg.PlayMode, _cfg.LoopSlideshow) == null) break;
+                photo = _playlist.Current;
+                if (photo == null) break;
             }
+            UpdateCounter();
+        }
 
+        private const int MaxCorruptSkip = 50;
+
+        private void RenderCurrent(BitmapSource bmp, bool animate)
+        {
+            var photo = _playlist.Current;
+            if (photo == null) return;
             UpdateOverlays(photo);
 
             if (animate && _engine != null && _playlist.Count > 1)
@@ -140,6 +166,11 @@ namespace PhotoFrame
             else
                 _engine?.ShowImmediate(bmp);
 
+            UpdateCounter();
+        }
+
+        private void UpdateCounter()
+        {
             // Счётчик: текущий / проиндексировано (всего файлов)
             int indexed = _lastScan?.Photos.Count ?? _playlist.Count;
             int total   = _lastScan?.TotalFilesScanned ?? indexed;
@@ -600,6 +631,24 @@ namespace PhotoFrame
             SystemIntegration.PreventSleep(false);
             SettingsService.Save(_cfg);
             try { _tray?.Dispose(); } catch { }
+        }
+
+        /// <summary>ПАТЧ 1.2.2.0-sp1: тихая проверка обновлений; при новой версии — BalloonTip в трее.</summary>
+        private async Task CheckUpdatesSilentlyAsync()
+        {
+            try
+            {
+                var ver = Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0);
+                var res = await UpdateService.CheckAsync(ver);
+                if (res.Ok && res.IsNewer && res.Update != null && _tray != null)
+                {
+                    _tray.Visible = true;
+                    _tray.BalloonTipTitle = "PhotoFrame: доступно обновление";
+                    _tray.BalloonTipText  = $"Версия {res.Update.Tag}. Откройте Настройки → Обновления.";
+                    _tray.ShowBalloonTip(8000);
+                }
+            }
+            catch { /* сеть недоступна — молча пропускаем */ }
         }
     }
 }
