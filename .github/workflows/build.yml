@@ -1,6 +1,11 @@
 name: Build & Release (PhotoFrame Free)
 
-# Автокомпиляция WPF-версии (.NET 8) + автопубликация релиза по тегу vX.Y.Z(.R)
+# Ветка v1.2.2.0-sp1: накопительный патч зависаний строго на базе кода v1.2.2.0.
+# Итог релиза: 6 exe-установщиков = 3 платформы (x86-32 / x86-64 / arm64) x 2 варианта
+#   Full — self-contained, включает .NET 8.0.31 runtime (~100+ МБ)
+#   Slim — framework-dependent, ориентирован на установленный .NET 8.0.31 Desktop Runtime (~7-10 МБ)
+# Токены нигде не хранятся: приложение проверяет релизы анонимным HTTPS,
+# публикация идёт через ephemeral GITHUB_TOKEN раннера.
 on:
   push:
     branches: [ master ]
@@ -15,12 +20,14 @@ env:
 
 jobs:
   build:
-    name: Build ${{ matrix.arch }}
+    name: Build ${{ matrix.arch }} (${{ matrix.variant }})
     if: startsWith(github.ref, 'refs/tags/v') == false || github.event_name == 'push'
     runs-on: windows-latest
     strategy:
+      fail-fast: false
       matrix:
-        arch: [win-x64, win-x86]
+        arch: [win-x86, win-x64, win-arm64]
+        variant: [full, slim]
     steps:
       - uses: actions/checkout@v4
 
@@ -34,55 +41,65 @@ jobs:
         shell: pwsh
         run: |
           if ("${{ github.ref }}" -like "refs/tags/v*") {
-            $v = "${{ github.ref_name }}".Substring(1)
+            # tag v1.2.2.0-sp1 -> assembly version 1.2.2.0 (sp1 — только в имени артефакта/релиза)
+            $v = ("${{ github.ref_name }}".Substring(1) -split '-')[0]
           } else {
-            $v = "1.2.3.${{ github.run_number }}"
+            $v = "1.2.2.0"
           }
           echo "version=$v" >> $env:GITHUB_OUTPUT
 
       - name: Restore
         run: dotnet restore ${{ env.PROJECT }}
 
-      - name: Build
-        run: dotnet build ${{ env.PROJECT }} -c Release -p:Version=${{ steps.ver.outputs.version }} --no-restore
-
-      - name: Publish (self-contained, single exe folder)
+      - name: Publish (full = self-contained с .NET 8.0.31)
+        if: matrix.variant == 'full'
         run: >
           dotnet publish ${{ env.PROJECT }} -c Release
           -r ${{ matrix.arch }} --self-contained true
           -p:PublishSingleFile=false
           -p:Version=${{ steps.ver.outputs.version }}
-          -o publish/${{ matrix.arch }}
+          -o publish/${{ matrix.arch }}-${{ matrix.variant }}
+
+      - name: Publish (slim = framework-dependent под .NET 8.0.31 Desktop Runtime)
+        if: matrix.variant == 'slim'
+        run: >
+          dotnet publish ${{ env.PROJECT }} -c Release
+          -r ${{ matrix.arch }} --self-contained false
+          -p:PublishSingleFile=false
+          -p:Version=${{ steps.ver.outputs.version }}
+          -o publish/${{ matrix.arch }}-${{ matrix.variant }}
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PhotoFrame-${{ matrix.arch }}
-          path: publish/${{ matrix.arch }}
+          name: PhotoFrame-${{ matrix.arch }}-${{ matrix.variant }}
+          path: publish/${{ matrix.arch }}-${{ matrix.variant }}
           retention-days: 14
 
   installer:
-    name: InnoSetup ${{ matrix.arch }}
+    name: InnoSetup ${{ matrix.arch }} (${{ matrix.variant }})
     needs: build
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: windows-latest
     strategy:
+      fail-fast: false
       matrix:
-        arch: [x64, x86]
+        arch: [x86, x64, arm64]
+        variant: [full, slim]
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download published binaries (${{ matrix.arch }})
+      - name: Download published binaries (win-${{ matrix.arch }}-${{ matrix.variant }})
         uses: actions/download-artifact@v4
         with:
-          name: PhotoFrame-win-${{ matrix.arch }}
-          path: publish/win-${{ matrix.arch }}
+          name: PhotoFrame-win-${{ matrix.arch }}-${{ matrix.variant }}
+          path: publish/win-${{ matrix.arch }}-${{ matrix.variant }}
 
       - name: Resolve version
         id: ver
         shell: pwsh
         run: |
-          # ref_name для тега vX.Y.Z(.R) -> версия без ведущей 'v'
+          # tag v1.2.2.0-sp1 -> 1.2.2.0-sp1 (имя файла); assembly-версия — без суффикса
           $v = "${{ github.ref_name }}".TrimStart('v')
           "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
@@ -90,7 +107,11 @@ jobs:
         shell: pwsh
         run: |
           $iss = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-          & $iss "/DMyAppVersion=${{ steps.ver.outputs.version }}" "/DMyArch=${{ matrix.arch }}" "/DOutputBaseName=PhotoFrame_v${{ steps.ver.outputs.version }}_${{ matrix.arch }}_Setup" Installer/PhotoFrame.iss
+          & $iss "/DMyAppVersion=${{ steps.ver.outputs.version }}" `
+                 "/DMyArch=${{ matrix.arch }}" `
+                 "/DMyVariant=${{ matrix.variant }}" `
+                 "/DMyPublishDir=..\publish\win-${{ matrix.arch }}-${{ matrix.variant }}" `
+                 Installer/PhotoFrame.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Checksums (sidecar .sha256 — их читает UpdateService в приложении)
@@ -98,14 +119,14 @@ jobs:
         run: |
           Get-ChildItem Installer/output/*.exe | ForEach-Object {
             $h = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
-            # sidecar должен содержать ТОЛЬКО hex-хэш: UpdateService парсит весь файл как хэш
+            # sidecar содержит ТОЛЬКО hex-хэш: UpdateService парсит весь файл как хэш
             Set-Content -Path "$($_.FullName).sha256" -Value $h -NoNewline
           }
 
       - name: Upload installer artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: installers-${{ matrix.arch }}
+          name: installers-${{ matrix.arch }}-${{ matrix.variant }}
           path: Installer/output/*
           retention-days: 14
 
@@ -128,5 +149,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
-          generate_release_notes: true
           fail_on_unmatched_files: true
