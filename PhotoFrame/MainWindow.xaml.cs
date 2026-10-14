@@ -40,7 +40,8 @@ namespace PhotoFrame
         private bool _toolbarVisible = true;
 
         private double _touchStartX;
-        private double _touchAccumX;  // ПАТЧ sp1: накопленный X тач-свайпа (сумма DeltaTranslation)
+        private double _touchLastX;   // ПАТЧ sp1: последняя X жеста для ручного накопления
+        private double _touchAccumX;  // ПАТЧ sp1: накопленный X тач-свайпа (WPF не даёт DeltaTranslation)
         private bool   _swipeFired;   // ПАТЧ sp1: свайп сработал один раз за жест (без дублей)
         private const double SwipePx = 70;
 
@@ -611,21 +612,29 @@ namespace PhotoFrame
         }
 
         // ─── ТАЧ ─────────────────────────────────────────────────────────────────
-        // ПАТЧ 1.2.2.0-sp1: рабочий тач-жест. WPF-манипуляции на Windows не вызываются,
-        // если в Started установлено Handled=true — жест «не работал». Плюс дедупликация
-        // с мышью через e.Source (тач-события приходят с Source != RootGrid и не дают
-        // двойного перелистывания). Логика тулбара/кнопок v1.2.2.0 не затронута.
+        // ПАТЧ 1.2.2.0-sp1: рабочий тач-жест. Причина «не работал» в v1.2.2.0 — в
+        // OnManipulationStarted стоял e.Handled=true, из-за чего WPF не генерировал
+        // ни ManipulationDelta, ни ManipulationCompleted. Исправлено; логика тулбара
+        // и кнопок v1.2.2.0 не затронута.
+        // ВАЖНО: в .NET (WPF) у ManipulationStartedEventArgs/ManipulationDeltaEventArgs
+        // НЕТ свойств Translation/DeltaTranslation — они есть только в WinUI/UWP.
+        // Кумулятивное смещение жеста считаем вручную из e.GetPosition(RootGrid).
 
         private void OnManipulationStarted(object s, ManipulationStartedEventArgs e)
-        { _touchStartX = e.ManipulationOrigin.X; /* НЕ handled — иначе Completed не придёт */ }
+        {
+            _touchStartX = e.ManipulationOrigin.X; /* НЕ handled — иначе Delta/Completed не придут */
+            var p = e.GetPosition(RootGrid);
+            _touchLastX = p.X;
+            _touchAccumX = 0;
+            _swipeFired = false;
+        }
 
         private void OnManipulationDelta(object s, ManipulationDeltaEventArgs e)
         {
-            // ПАТЧ sp1 (исправление CS1061): в WPF у ManipulationDeltaEventArgs есть только
-            // DeltaTranslation (смещение за последний кадр жеста) — накапливаем его сами.
-            // Срабатывание один раз за жест (флаг), чтобы не листать на каждый кадр Delta.
             if (_swipeFired) return;
-            _touchAccumX += e.DeltaTranslation.X;
+            var p = e.GetPosition(RootGrid);
+            _touchAccumX += p.X - _touchLastX; // накопление вручную (аналог DeltaTranslation)
+            _touchLastX = p.X;
             if (Math.Abs(_touchAccumX) >= SwipePx)
             {
                 _swipeFired = true;
@@ -638,10 +647,10 @@ namespace PhotoFrame
         private void OnManipulationCompleted(object s, ManipulationCompletedEventArgs e)
         {
             // если свайп уже сработал в Delta — не дублируем перелистывание
-            if (!_swipeFired)
+            if (!_swipeFired && Math.Abs(_touchAccumX) >= SwipePx)
             {
-                double dx = e.TotalManipulation.Translation.X;
-                if (Math.Abs(dx) >= SwipePx) { ShowToolbarNow(); if (dx < 0) _ = AdvanceAsync(); else _ = GoBackAsync(); }
+                ShowToolbarNow();
+                if (_touchAccumX < 0) _ = AdvanceAsync(); else _ = GoBackAsync();
             }
             _swipeFired = false;
             _touchAccumX = 0;
