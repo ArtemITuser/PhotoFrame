@@ -39,10 +39,7 @@ namespace PhotoFrame
         private readonly DispatcherTimer _hideTimer  = new() { Interval = TimeSpan.FromSeconds(3) };
         private bool _toolbarVisible = true;
 
-        private double _touchStartX;
-        private double _touchLastX;   // ПАТЧ sp1: последняя X жеста для ручного накопления
-        private double _touchAccumX;  // ПАТЧ sp1: накопленный X тач-свайпа (WPF не даёт DeltaTranslation)
-        private bool   _swipeFired;   // ПАТЧ sp1: свайп сработал один раз за жест (без дублей)
+        private double _touchStartX; // v1.2.2.0 (как в оригинале)
         private const double SwipePx = 70;
 
         private System.Windows.Forms.NotifyIcon? _tray;
@@ -612,48 +609,27 @@ namespace PhotoFrame
         }
 
         // ─── ТАЧ ─────────────────────────────────────────────────────────────────
-        // ПАТЧ 1.2.2.0-sp1: рабочий тач-жест. Причина «не работал» в v1.2.2.0 — в
-        // OnManipulationStarted стоял e.Handled=true, из-за чего WPF не генерировал
-        // ни ManipulationDelta, ни ManipulationCompleted. Исправлено; логика тулбара
-        // и кнопок v1.2.2.0 не затронута.
-        // ВАЖНО: в .NET (WPF) у ManipulationStartedEventArgs/ManipulationDeltaEventArgs
-        // НЕТ свойств Translation/DeltaTranslation — они есть только в WinUI/UWP.
-        // Кумулятивное смещение жеста считаем вручную из e.GetPosition(RootGrid).
+        // ПАТЧ 1.2.2.0-sp1: рабочий тач-жест (свайп).
+        // Причина «не работал» в v1.2.2.0 — в OnManipulationStarted стоял e.Handled=true,
+        // из-за чего WPF не генерировал ни ManipulationDelta, ни ManipulationCompleted.
+        // Свойства args (ManipulationOrigin / TotalManipulation.Translation) и обработчики
+        // оставлены СТРОГО как в v1.2.2.0 — только снят Handled и добавлен ShowToolbarNow.
+        // Логика тулбара/кнопок/перелистывания v1.2.2.0 не затронута.
 
         private void OnManipulationStarted(object s, ManipulationStartedEventArgs e)
-        {
-            _touchStartX = e.ManipulationOrigin.X; /* НЕ handled — иначе Delta/Completed не придут */
-            var p = e.GetPosition(RootGrid);
-            _touchLastX = p.X;
-            _touchAccumX = 0;
-            _swipeFired = false;
-        }
+        { _touchStartX = e.ManipulationOrigin.X; /* НЕ handled — иначе Delta/Completed не придут */ }
 
         private void OnManipulationDelta(object s, ManipulationDeltaEventArgs e)
         {
-            if (_swipeFired) return;
-            var p = e.GetPosition(RootGrid);
-            _touchAccumX += p.X - _touchLastX; // накопление вручную (аналог DeltaTranslation)
-            _touchLastX = p.X;
-            if (Math.Abs(_touchAccumX) >= SwipePx)
-            {
-                _swipeFired = true;
-                ShowToolbarNow();
-                if (_touchAccumX < 0) _ = AdvanceAsync(); else _ = GoBackAsync();
-                e.Complete();
-            }
+            // ПОКАЗАТЕЛЬНОЕ событие жеста (тулбар); перелистывание — в Completed,
+            // чтобы не срабатывало несколько раз на один свайп.
+            ShowToolbarNow();
         }
 
         private void OnManipulationCompleted(object s, ManipulationCompletedEventArgs e)
         {
-            // если свайп уже сработал в Delta — не дублируем перелистывание
-            if (!_swipeFired && Math.Abs(_touchAccumX) >= SwipePx)
-            {
-                ShowToolbarNow();
-                if (_touchAccumX < 0) _ = AdvanceAsync(); else _ = GoBackAsync();
-            }
-            _swipeFired = false;
-            _touchAccumX = 0;
+            double dx = e.TotalManipulation.Translation.X;
+            if (Math.Abs(dx) >= SwipePx) { ShowToolbarNow(); if (dx < 0) _ = AdvanceAsync(); else _ = GoBackAsync(); }
             e.Handled = true;
         }
 
