@@ -40,6 +40,7 @@ namespace PhotoFrame
         private bool _toolbarVisible = true;
 
         private double _touchStartX;
+        private double _touchAccumX; // ПАТЧ sp1: накопление X для тач-свайпа в Delta
         private const double SwipePx = 70;
 
         private System.Windows.Forms.NotifyIcon? _tray;
@@ -619,11 +620,13 @@ namespace PhotoFrame
 
         private void OnManipulationDelta(object s, ManipulationDeltaEventArgs e)
         {
-            double dx = e.CumulativeTranslation.X;
-            if (Math.Abs(dx) >= SwipePx)
+            // ПАТЧ sp1: кумулятивное смещение считаем сами (у args есть только DeltaTranslation)
+            _touchAccumX += e.DeltaTranslation.X;
+            if (Math.Abs(_touchAccumX) >= SwipePx)
             {
                 ShowToolbarNow();
-                if (dx < 0) _ = AdvanceAsync(); else _ = GoBackAsync();
+                if (_touchAccumX < 0) _ = AdvanceAsync(); else _ = GoBackAsync();
+                _touchAccumX = 0;
                 e.Handled = true;
                 e.Complete();
             }
