@@ -40,7 +40,8 @@ namespace PhotoFrame
         private bool _toolbarVisible = true;
 
         private double _touchStartX;
-        private double _touchAccumX; // ПАТЧ sp1: накопление X для тач-свайпа в Delta
+        private double _touchAccumX;  // ПАТЧ sp1: кумулятивный X жеста (CumulativeTranslation)
+        private bool   _swipeFired;   // ПАТЧ sp1: свайп сработал один раз за жест (без дублей)
         private const double SwipePx = 70;
 
         private System.Windows.Forms.NotifyIcon? _tray;
@@ -620,22 +621,30 @@ namespace PhotoFrame
 
         private void OnManipulationDelta(object s, ManipulationDeltaEventArgs e)
         {
-            // ПАТЧ sp1: кумулятивное смещение считаем сами (у args есть только DeltaTranslation)
-            _touchAccumX += e.DeltaTranslation.X;
+            // ПАТЧ sp1 (исправление CS1061): в WPF у ManipulationDeltaEventArgs нет свойства
+            // DeltaTranslation — кумулятивный жест лежит в e.CumulativeTranslation.
+            // Срабатывание один раз за жест (флаг), чтобы не листать на каждый кадр Delta.
+            if (_swipeFired) return;
+            _touchAccumX = e.CumulativeTranslation.X;
             if (Math.Abs(_touchAccumX) >= SwipePx)
             {
+                _swipeFired = true;
                 ShowToolbarNow();
                 if (_touchAccumX < 0) _ = AdvanceAsync(); else _ = GoBackAsync();
-                _touchAccumX = 0;
-                e.Handled = true;
                 e.Complete();
             }
         }
 
         private void OnManipulationCompleted(object s, ManipulationCompletedEventArgs e)
         {
-            double dx = e.TotalManipulation.Translation.X;
-            if (Math.Abs(dx) >= SwipePx) { ShowToolbarNow(); if (dx < 0) _ = AdvanceAsync(); else _ = GoBackAsync(); }
+            // если свайп уже сработал в Delta — не дублируем перелистывание
+            if (!_swipeFired)
+            {
+                double dx = e.TotalManipulation.Translation.X;
+                if (Math.Abs(dx) >= SwipePx) { ShowToolbarNow(); if (dx < 0) _ = AdvanceAsync(); else _ = GoBackAsync(); }
+            }
+            _swipeFired = false;
+            _touchAccumX = 0;
             e.Handled = true;
         }
 
