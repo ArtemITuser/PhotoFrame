@@ -24,7 +24,8 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <PlatformTarget>AnyCPU</PlatformTarget>
     <Prefer32Bit>false</Prefer32Bit>
-    <ApplicationIcon>Resources\Icons\Media001.ico</ApplicationIcon>
+    <!-- 1.2.2.0-sp1: новый плоский значок в стиле Windows 10 (вместо Media001.ico — «зелёный треугольник») -->
+    <ApplicationIcon>Resources\Icons\AppIcon.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>

@@ -28,6 +28,8 @@ AppSupportURL=https://github.com/ArtemITuser/PhotoFrame/issues
 DefaultDirName={autopf}\PhotoFrame
 DefaultGroupName=PhotoFrame
 UninstallDisplayIcon={app}\PhotoFrame.exe
+; 1.2.2.0-sp1: значок установщика — новый плоский W10-стиль (не «зелёный треугольник» Media001)
+SetupIconFile=..\PhotoFrame\Resources\Icons\AppIcon.ico
 OutputDir=output
 OutputBaseFilename=PhotoFrame_v{#MyAppVersion}_{#MyArch}_{#MyVariant}_Setup
 Compression=lzma2/max

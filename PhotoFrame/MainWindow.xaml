@@ -27,6 +27,7 @@
     <Grid x:Name="RootGrid" ClipToBounds="True"
           IsManipulationEnabled="True"
           ManipulationStarted="OnManipulationStarted"
+          ManipulationDelta="OnManipulationDelta"
           ManipulationCompleted="OnManipulationCompleted">
 
         <!-- Чёрный фон -->

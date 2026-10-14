@@ -436,7 +436,7 @@ namespace PhotoFrame
                 try
                 {
                     var s = Application.GetResourceStream(
-                        new Uri("pack://application:,,,/Resources/Icons/Media001.ico"))?.Stream;
+                        new Uri("pack://application:,,,/Resources/Icons/AppIcon.ico"))?.Stream;
                     _tray.Icon = s != null
                         ? new System.Drawing.Icon(s)
                         : System.Drawing.SystemIcons.Application;
@@ -609,15 +609,30 @@ namespace PhotoFrame
         }
 
         // ─── ТАЧ ─────────────────────────────────────────────────────────────────
+        // ПАТЧ 1.2.2.0-sp1: рабочий тач-жест. WPF-манипуляции на Windows не вызываются,
+        // если в Started установлено Handled=true — жест «не работал». Плюс дедупликация
+        // с мышью через e.Source (тач-события приходят с Source != RootGrid и не дают
+        // двойного перелистывания). Логика тулбара/кнопок v1.2.2.0 не затронута.
 
         private void OnManipulationStarted(object s, ManipulationStartedEventArgs e)
-        { _touchStartX = e.ManipulationOrigin.X; e.Handled = true; }
+        { _touchStartX = e.ManipulationOrigin.X; /* НЕ handled — иначе Completed не придёт */ }
+
+        private void OnManipulationDelta(object s, ManipulationDeltaEventArgs e)
+        {
+            double dx = e.CumulativeTranslation.X;
+            if (Math.Abs(dx) >= SwipePx)
+            {
+                ShowToolbarNow();
+                if (dx < 0) _ = AdvanceAsync(); else _ = GoBackAsync();
+                e.Handled = true;
+                e.Complete();
+            }
+        }
 
         private void OnManipulationCompleted(object s, ManipulationCompletedEventArgs e)
         {
-            ShowToolbarNow();
             double dx = e.TotalManipulation.Translation.X;
-            if (Math.Abs(dx) >= SwipePx) { if (dx < 0) _ = AdvanceAsync(); else _ = GoBackAsync(); }
+            if (Math.Abs(dx) >= SwipePx) { ShowToolbarNow(); if (dx < 0) _ = AdvanceAsync(); else _ = GoBackAsync(); }
             e.Handled = true;
         }
 
