@@ -40,7 +40,7 @@ namespace PhotoFrame
         private bool _toolbarVisible = true;
 
         private double _touchStartX;
-        private double _touchAccumX;  // ПАТЧ sp1: кумулятивный X жеста (CumulativeTranslation)
+        private double _touchAccumX;  // ПАТЧ sp1: накопленный X тач-свайпа (сумма DeltaTranslation)
         private bool   _swipeFired;   // ПАТЧ sp1: свайп сработал один раз за жест (без дублей)
         private const double SwipePx = 70;
 
@@ -621,11 +621,11 @@ namespace PhotoFrame
 
         private void OnManipulationDelta(object s, ManipulationDeltaEventArgs e)
         {
-            // ПАТЧ sp1 (исправление CS1061): в WPF у ManipulationDeltaEventArgs нет свойства
-            // DeltaTranslation — кумулятивный жест лежит в e.CumulativeTranslation.
+            // ПАТЧ sp1 (исправление CS1061): в WPF у ManipulationDeltaEventArgs есть только
+            // DeltaTranslation (смещение за последний кадр жеста) — накапливаем его сами.
             // Срабатывание один раз за жест (флаг), чтобы не листать на каждый кадр Delta.
             if (_swipeFired) return;
-            _touchAccumX = e.CumulativeTranslation.X;
+            _touchAccumX += e.DeltaTranslation.X;
             if (Math.Abs(_touchAccumX) >= SwipePx)
             {
                 _swipeFired = true;
