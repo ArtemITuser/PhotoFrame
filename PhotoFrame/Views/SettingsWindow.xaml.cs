@@ -74,7 +74,68 @@ namespace PhotoFrame.Views
             ChkDir.IsChecked  = _w.ShowDirectoryOverlay;
             ChkDate.IsChecked = _w.ShowDateOverlay;
             ChkLoc.IsChecked  = _w.ShowLocationOverlay;
+            // ПАТЧ sp1: тоггл точных координат + состояние общего выключателя
+            ChkExactCoords.IsChecked = _w.ShowExactCoordinates;
+            ChkOverlayAll.IsChecked  = _w.ShowDirectoryOverlay || _w.ShowDateOverlay || _w.ShowLocationOverlay;
             SldFont.Value     = _w.OverlayFontSize;
+            // ПАТЧ sp1: вкладка «Больше…» — чекбоксы опциональных EXIF-сведений
+            ChkMoreCamera.IsChecked   = _w.MoreInfoCamera;
+            ChkMoreExposure.IsChecked = _w.MoreInfoExposure;
+            ChkMoreFocal.IsChecked    = _w.MoreInfoFocal;
+            ChkMoreSize.IsChecked     = _w.MoreInfoFileSize;
+            ChkMoreAuthor.IsChecked   = _w.MoreInfoAuthor;
+            ChkMoreTitle.IsChecked    = _w.MoreInfoTitle;
+        }
+
+        /// <summary>ПАТЧ sp1: общий выключатель наложений — одним движением вкл/выкл все.</summary>
+        private void OnOverlayAllClick(object s, RoutedEventArgs e)
+        {
+            bool on = ChkOverlayAll.IsChecked == true;
+            if (!on) { ChkDir.IsChecked = ChkDate.IsChecked = ChkLoc.IsChecked = false; }
+            else     { ChkDir.IsChecked = ChkDate.IsChecked = ChkLoc.IsChecked = true; }
+        }
+
+        // ─── ПАТЧ sp1: вкладка «Больше…» + сертификат доверия ─────────────────────
+
+        /// <summary>Кнопка «Показать сведения о текущем фото» → панель MainWindow.MoreInfoPanel.</summary>
+        private void OnShowMoreInfo(object s, RoutedEventArgs e)
+        {
+            if (Owner is MainWindow mw) mw.ShowMoreInfoPanel();
+        }
+
+        /// <summary>Статус встроенного .cer в хранилище CurrentUser\Root.</summary>
+        private void LoadCertStatus()
+        {
+            try
+            {
+                bool installed = PhotoFrame.Services.UpdateService.IsTrustCertInstalled();
+                TbCertInfo.Text = installed
+                    ? "✔ Сертификат PhotoFrame установлен в «Доверенные корневые сертификаты».\n" +
+                      "Патчи и enroll-обновления будут проходить без предупреждений Windows."
+                    : "Сертификат не установлен. Нажмите кнопку ниже — установка «один раз», только в ваше" +
+                      " пользовательское хранилище (без прав администратора).";
+                BtnInstallCert.IsEnabled = !installed;
+            }
+            catch { TbCertInfo.Text = "Сведения о сертификате недоступны."; }
+        }
+
+        private void OnInstallCert(object s, RoutedEventArgs e)
+        {
+            try
+            {
+                bool ok = PhotoFrame.Services.UpdateService.InstallTrustCert();
+                MessageBox.Show(ok
+                    ? "Сертификат PhotoFrame добавлен в доверенные (CurrentUser\\Root).\nТеперь обновления устанавливаются без предупреждений."
+                    : "Не удалось установить сертификат. Файл PhotoFrame.cer можно найти в папке приложения и установить вручную.",
+                    "PhotoFrame", MessageBoxButton.OK,
+                    ok ? MessageBoxImage.Information : MessageBoxImage.Warning);
+                LoadCertStatus();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка: {ex.Message}", "PhotoFrame",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         private void LoadPlayback()
@@ -135,7 +196,7 @@ namespace PhotoFrame.Views
         {
             if (NavList?.SelectedItem is not ListBoxItem item) return;
 
-            foreach (StackPanel p in new[] { PGeneral, PSources, POverlays,
+            foreach (StackPanel p in new[] { PGeneral, PSources, POverlays, PMore,
                                               PPlayback, PAppearance, PSystem, PPower, PAbout })
                 if (p != null) p.Visibility = Visibility.Collapsed;
 
@@ -145,6 +206,7 @@ namespace PhotoFrame.Views
                 "General"    => PGeneral,
                 "Sources"    => PSources,
                 "Overlays"   => POverlays,
+                "More"       => PMore,
                 "Playback"   => PPlayback,
                 "Appearance" => PAppearance,
                 "System"     => PSystem,
@@ -155,7 +217,7 @@ namespace PhotoFrame.Views
             if (target != null) target.Visibility = Visibility.Visible;
 
             if (tag == "Sources") _ = LoadPreviewAsync();
-            if (tag == "About")   LoadAbout();
+            if (tag == "About")   { LoadAbout(); LoadCertStatus(); }
         }
 
         // ─── Источники ────────────────────────────────────────────────────────────
@@ -562,7 +624,15 @@ namespace PhotoFrame.Views
             _w.ShowDirectoryOverlay = ChkDir?.IsChecked  == true;
             _w.ShowDateOverlay      = ChkDate?.IsChecked == true;
             _w.ShowLocationOverlay  = ChkLoc?.IsChecked  == true;
+            _w.ShowExactCoordinates = ChkExactCoords?.IsChecked == true;
             _w.OverlayFontSize      = Math.Round(SldFont?.Value ?? 15, 1);
+            // ПАТЧ sp1: опциональные EXIF-сведения (вкладка «Больше…»)
+            _w.MoreInfoCamera   = ChkMoreCamera?.IsChecked   == true;
+            _w.MoreInfoExposure = ChkMoreExposure?.IsChecked == true;
+            _w.MoreInfoFocal    = ChkMoreFocal?.IsChecked    == true;
+            _w.MoreInfoFileSize = ChkMoreSize?.IsChecked     == true;
+            _w.MoreInfoAuthor   = ChkMoreAuthor?.IsChecked   == true;
+            _w.MoreInfoTitle    = ChkMoreTitle?.IsChecked    == true;
 
             if (SelectedTag<PlayMode>(CmbPlayMode, out var pm))       _w.PlayMode = pm;
             if (SelectedTag<TransitionType>(CmbTransition, out var tt)) _w.TransitionType = tt;

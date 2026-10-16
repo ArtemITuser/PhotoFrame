@@ -45,7 +45,7 @@
         <Border x:Name="OverlayDir"
                 HorizontalAlignment="Left" VerticalAlignment="Top"
                 Style="{DynamicResource OverlayBadge}"
-                Margin="18,18,0,0" MaxWidth="500"
+                Margin="18,18,0,0" MaxWidth="360"
                 IsHitTestVisible="False" Visibility="Collapsed">
             <TextBlock x:Name="TbDir"
                        Style="{DynamicResource OverlayText}"
@@ -56,10 +56,10 @@
         <Border x:Name="OverlayLoc"
                 HorizontalAlignment="Center" VerticalAlignment="Top"
                 Style="{DynamicResource OverlayBadge}"
-                Margin="0,18,0,0" IsHitTestVisible="False" Visibility="Collapsed">
+                Margin="0,18,0,0" MaxWidth="700" IsHitTestVisible="False" Visibility="Collapsed">
             <TextBlock x:Name="TbLoc"
                        Style="{DynamicResource OverlayText}"
-                       TextAlignment="Center"/>
+                       TextAlignment="Center" TextWrapping="Wrap"/>
         </Border>
 
         <!-- ── Оверлей: дата (правый низ) ───────────────────────── -->
@@ -68,6 +68,18 @@
                 Style="{DynamicResource OverlayBadge}"
                 Margin="0,0,18,80" IsHitTestVisible="False" Visibility="Collapsed">
             <TextBlock x:Name="TbDate" Style="{DynamicResource OverlayText}"/>
+        </Border>
+
+        <!-- ── ПАТЧ sp1: панель «Больше…» — опциональные EXIF-сведения ─────────
+             Правый нижний угол, ВЫШЕ оверлея даты и счётчика — наложения не
+             перекрывают друг друга. Показывается по правому свайпу / клавише I. -->
+        <Border x:Name="MoreInfoPanel"
+                HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                Style="{DynamicResource OverlayBadge}"
+                Margin="0,0,18,150" MaxWidth="460"
+                IsHitTestVisible="False" Visibility="Collapsed">
+            <TextBlock x:Name="TbMoreInfo" Style="{DynamicResource OverlayText}"
+                       TextWrapping="Wrap" LineHeight="20"/>
         </Border>
 
         <!-- ── Счётчик фото (центр, над тулбаром) ───────────────── -->

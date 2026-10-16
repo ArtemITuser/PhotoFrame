@@ -258,6 +258,68 @@ namespace PhotoFrame.Services
             catch { return false; }
         }
 
+        // ─── ПАТЧ sp1: доверенный сертификат приложения (бесшовные enroll-патчи) ──
+        //
+        // Идея «в корне и элегантно»: один раз установленный self-signed .cer в
+        // CurrentUser\Root делает всё будущее обновление бесшовным — Windows сама
+        // проверит подпись установщика по цепочке доверия, повторных предупреждений
+        // SmartScreen/UAC на скачивание не будет. Никакого кода верификации «на костылях».
+
+        /// <summary>Имя встроенного сертификата рядом с exe.</summary>
+        public const string TrustCertFileName = "PhotoFrame.cer";
+
+        private static string TrustCertPath =>
+            Path.Combine(AppContext.BaseDirectory, TrustCertFileName);
+
+        /// <summary>Отпечаток встроенного .cer (или null, если файла нет).</summary>
+        public static string? GetTrustCertThumbprint()
+        {
+            try
+            {
+                using var cert = new System.Security.Cryptography.X509Certificates.X509Certificate2(TrustCertPath);
+                return cert.Thumbprint;
+            }
+            catch { return null; }
+        }
+
+        /// <summary>Установлен ли наш сертификат в «Доверенные корневые» текущего пользователя.</summary>
+        public static bool IsTrustCertInstalled()
+        {
+            var fp = GetTrustCertThumbprint();
+            if (fp == null) return false;
+            try
+            {
+                using var store = new System.Security.Cryptography.X509Certificates.X509Store(
+                    System.Security.Cryptography.X509Certificates.StoreName.Root,
+                    System.Security.Cryptography.X509Certificates.StoreLocation.CurrentUser);
+                store.Open(System.Security.Cryptography.X509Certificates.OpenFlags.ReadOnly);
+                return store.Certificates.Find(
+                    System.Security.Cryptography.X509Certificates.X509FindType.FindByThumbprint,
+                    fp, false).Count > 0;
+            }
+            catch { return false; }
+        }
+
+        /// <summary>
+        /// Раз и навсегда добавляет PhotoFrame.cer в CurrentUser\Root (без прав админа).
+        /// Возвращает true при успехе или если уже установлен.
+        /// </summary>
+        public static bool InstallTrustCert()
+        {
+            try
+            {
+                if (IsTrustCertInstalled()) return true;
+                using var cert = new System.Security.Cryptography.X509Certificates.X509Certificate2(TrustCertPath);
+                using var store = new System.Security.Cryptography.X509Certificates.X509Store(
+                    System.Security.Cryptography.X509Certificates.StoreName.Root,
+                    System.Security.Cryptography.X509Certificates.StoreLocation.CurrentUser);
+                store.Open(System.Security.Cryptography.X509Certificates.OpenFlags.ReadWrite);
+                store.Add(cert);   // per-user: UAC не требуется
+                return true;
+            }
+            catch { return false; }
+        }
+
         // ─── Helpers ──────────────────────────────────────────────────────────────
 
         private static HttpClient MakeClient(TimeSpan? timeout = null)

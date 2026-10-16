@@ -47,6 +47,24 @@ namespace PhotoFrame.Services
                 ExtractGps(meta, out double? lat, out double? lon);
                 photo.Latitude  = lat;
                 photo.Longitude = lon;
+
+                // ── ПАТЧ sp1: дополнительные поля EXIF для вкладки «Больше…» ──────
+                photo.CameraMake   = AsStr(meta.GetQuery("/app1/ifd/{uint=271}"));
+                photo.CameraModel  = AsStr(meta.GetQuery("/app1/ifd/{uint=272}"));
+                photo.Artist       = AsStr(meta.GetQuery("/app1/ifd/{uint=315}"));
+                photo.Title        = AsStr(meta.GetQuery("/ifd-exif/{uint=4009}"))
+                                  ?? AsStr(meta.GetQuery("/app1/ifd/{uint=4009}"));
+                photo.Iso          = AsStr(meta.GetQuery("/app1/ifd/{uint=34667}"))
+                                  ?? AsStr(meta.GetQuery("/app1/ifd/subifd/{uint=34867}"));
+                var fl = ParseRational(meta.GetQuery("/app1/ifd/subifd:{uint=37381}"));
+                if (fl.HasValue) photo.FocalLength = $"{fl.Value:F1} мм";
+                var sh = ParseRational(meta.GetQuery("/app1/ifd/subifd:{uint=37378}"));
+                if (sh.HasValue && sh.Value > 0)
+                    photo.ExposureTime = sh.Value >= 1 ? $"{sh.Value:F1} с" : $"1/{(int)(1 / sh.Value)} с";
+                var fn = ParseRational(meta.GetQuery("/app1/ifd/subifd:{uint=37366}"));
+                if (fn.HasValue) photo.FNumber = $"f/{fn.Value:F1}";
+                photo.PixelWidth  = decoder.Frames[0].PixelWidth;
+                photo.PixelHeight = decoder.Frames[0].PixelHeight;
             }
             catch
             {
@@ -55,6 +73,25 @@ namespace PhotoFrame.Services
         }
 
         // ─── Приватные вспомогательные методы ─────────────────────────────────────
+
+        private static string? AsStr(object? v) =>
+            v == null ? null : (v as string ?? v.ToString())?.Trim();
+
+        /// <summary>Упакованное WPF рациональное (ulong: num | den&lt;&lt;32) → double.</summary>
+        private static double? ParseRational(object? raw)
+        {
+            try
+            {
+                if (raw is ulong u)
+                {
+                    uint num = (uint)(u & 0xFFFFFFFF);
+                    uint den = (uint)(u >> 32);
+                    return den != 0 ? (double)num / den : (double?)null;
+                }
+            }
+            catch { }
+            return null;
+        }
 
         private static DateTime? ExtractDate(BitmapMetadata meta)
         {

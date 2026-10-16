@@ -37,4 +37,12 @@
     <Resource Include="Resources\Icons\*.png" />
     <Resource Include="Resources\Icons\*.ico" />
   </ItemGroup>
+
+  <!-- 1.2.2.0-sp1: универсальный сертификат доверия — кладётся рядом с exe,
+       устанавливается «раз и навсегда» из настроек (CurrentUser\Root) -->
+  <ItemGroup>
+    <None Include="Resources\Cert\PhotoFrame.cer">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
 </Project>

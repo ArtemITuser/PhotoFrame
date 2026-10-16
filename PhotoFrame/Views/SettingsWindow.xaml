@@ -48,6 +48,13 @@
                             <TextBlock Text="Оверлеи" Foreground="{DynamicResource TextPrimary}"/>
                         </StackPanel>
                     </ListBoxItem>
+                    <!-- ПАТЧ sp1: отдельная вкладка «Больше…» — опциональные сведения EXIF -->
+                    <ListBoxItem Tag="More" Style="{DynamicResource NavItem}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE946;  " FontFamily="Segoe MDL2 Assets" FontSize="13"/>
+                            <TextBlock Text="Больше…" Foreground="{DynamicResource TextPrimary}"/>
+                        </StackPanel>
+                    </ListBoxItem>
                     <ListBoxItem Tag="Playback" Style="{DynamicResource NavItem}">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="&#xE768;  " FontFamily="Segoe MDL2 Assets" FontSize="13"/>
@@ -178,7 +185,10 @@
                                    Text="Отображаются поверх фотографии."/>
                         <CheckBox x:Name="ChkDir"  Content="Директория файла — левый верхний угол"  Margin="0,0,0,6"/>
                         <CheckBox x:Name="ChkDate" Content="Дата съёмки из EXIF — правый нижний угол" Margin="0,0,0,6"/>
-                        <CheckBox x:Name="ChkLoc"  Content="GPS-координаты из EXIF — верх по центру" Margin="0,0,0,14"/>
+                        <CheckBox x:Name="ChkLoc"  Content="Местоположение (регион/GPS из EXIF) — верх по центру" Margin="0,0,0,6"/>
+                        <!-- ПАТЧ sp1: тоггл точных координат + общий выключатель всех наложений -->
+                        <CheckBox x:Name="ChkExactCoords" Content="Показывать точные GPS-координаты (иначе — только регион)" Margin="18,0,0,6"/>
+                        <CheckBox x:Name="ChkOverlayAll" Content="Показывать все наложения (снятие — отключить всё разом)" Margin="0,0,0,14" Click="OnOverlayAllClick"/>
                         <TextBlock Text="Размер шрифта:" Foreground="{DynamicResource TextPrimary}" Margin="0,0,0,4"/>
                         <StackPanel Orientation="Horizontal">
                             <Slider x:Name="SldFont" Minimum="10" Maximum="28" Width="180"
@@ -186,6 +196,23 @@
                             <TextBlock x:Name="TbFontVal" VerticalAlignment="Center"
                                        Margin="10,0" Foreground="{DynamicResource TextPrimary}"/>
                         </StackPanel>
+                    </StackPanel>
+
+                    <!-- ══════ БОЛЬШЕ… (опциональные сведения EXIF) ══ -->
+                    <StackPanel x:Name="PMore" Visibility="Collapsed">
+                        <TextBlock Text="БОЛЬШЕ… / ОПЦИОНАЛЬНЫЕ СВЕДЕНИЯ" Style="{DynamicResource SectionHeader}"/>
+                        <TextBlock TextWrapping="Wrap" Margin="0,0,0,10"
+                                   Foreground="{DynamicResource TextSecondary}"
+                                   Text="Дополнительные поля из EXIF. Включённые поля показываются во всплывающей панели «Больше…» в правом нижнем углу кадра — выше счётчика, поверх остальных наложений не накладывается."/>
+                        <CheckBox x:Name="ChkMoreCamera"  Content="Камера: модель / производитель" Margin="0,0,0,6"/>
+                        <CheckBox x:Name="ChkMoreExposure" Content="Экспозиция: выдержка / диафрагма / ISO" Margin="0,0,0,6"/>
+                        <CheckBox x:Name="ChkMoreFocal"   Content="Объектив: фокусное расстояние / зум" Margin="0,0,0,6"/>
+                        <CheckBox x:Name="ChkMoreSize"    Content="Разрешение файла (пиксели)" Margin="0,0,0,6"/>
+                        <CheckBox x:Name="ChkMoreAuthor"  Content="Автор (EXIF Artist)" Margin="0,0,0,6"/>
+                        <CheckBox x:Name="ChkMoreTitle"   Content="Заголовок / описание (EXIF)" Margin="0,0,0,14"/>
+                        <Button Content="Показать сведения о текущем фото"
+                                Style="{DynamicResource SecondaryButton}"
+                                HorizontalAlignment="Left" Click="OnShowMoreInfo"/>
                     </StackPanel>
 
                     <!-- ══════ ВОСПРОИЗВЕДЕНИЕ ══════════════════════ -->
@@ -319,6 +346,23 @@
                         <TextBlock x:Name="TbUpdateStatus" Text=""
                                    Foreground="{DynamicResource TextSecondary}"
                                    TextWrapping="Wrap" FontSize="12" Margin="0,0,0,16"/>
+
+                        <!-- ПАТЧ sp1: доверенный сертификат приложения (enroll-патчи без предупреждений) -->
+                        <TextBlock Text="СЕРТИФИКАТ ДОВЕРИЯ PHOTOFRAME" Style="{DynamicResource SectionHeader}"/>
+                        <Border Background="{DynamicResource Surface2Brush}"
+                                BorderBrush="{DynamicResource BorderBrush}"
+                                BorderThickness="1" CornerRadius="4"
+                                Padding="10,8" Margin="0,6,0,10">
+                            <TextBlock x:Name="TbCertInfo"
+                                       Text="Проверка…"
+                                       Foreground="{DynamicResource TextSecondary}"
+                                       TextWrapping="Wrap" FontSize="12"/>
+                        </Border>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                            <Button x:Name="BtnInstallCert" Content="Установить .cer в доверенные один раз"
+                                    Style="{DynamicResource AccentButton}"
+                                    Margin="0,0,10,0" Click="OnInstallCert"/>
+                        </StackPanel>
 
                         <!-- GitHub -->
                         <TextBlock Text="РЕПОЗИТОРИЙ" Style="{DynamicResource SectionHeader}"/>

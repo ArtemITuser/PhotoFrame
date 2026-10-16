@@ -160,6 +160,7 @@ namespace PhotoFrame
             var photo = _playlist.Current;
             if (photo == null) return;
             UpdateOverlays(photo);
+            UpdateMoreInfo(photo); // ПАТЧ sp1
 
             if (animate && _engine != null && _playlist.Count > 1)
                 _engine.Transition(bmp, _cfg.TransitionType, _cfg.TransitionDurationSeconds);
@@ -345,9 +346,11 @@ namespace PhotoFrame
 
         private void UpdateOverlays(PhotoInfo photo)
         {
-            Set(OverlayDir,  TbDir,  _cfg.ShowDirectoryOverlay, photo.Directory,      _cfg.OverlayFontSize);
-            Set(OverlayLoc,  TbLoc,  _cfg.ShowLocationOverlay,  photo.LocationString, _cfg.OverlayFontSize);
-            Set(OverlayDate, TbDate, _cfg.ShowDateOverlay,       photo.DateString,     _cfg.OverlayFontSize);
+            bool any = _cfg.ShowDirectoryOverlay || _cfg.ShowDateOverlay || _cfg.ShowLocationOverlay;
+            Set(OverlayDir,  TbDir,  any && _cfg.ShowDirectoryOverlay, photo.Directory,      _cfg.OverlayFontSize);
+            // ПАТЧ sp1: местоположение — регион (Крым корректно «Россия») + опционально точные координаты
+            Set(OverlayLoc,  TbLoc,  any && _cfg.ShowLocationOverlay,  photo.LocationStringPrecise(_cfg.ShowExactCoordinates), _cfg.OverlayFontSize);
+            Set(OverlayDate, TbDate, any && _cfg.ShowDateOverlay,       photo.DateString,     _cfg.OverlayFontSize);
         }
 
         private static void Set(
@@ -358,6 +361,37 @@ namespace PhotoFrame
             tb.Text = text ?? ""; tb.FontSize = fs;
             b.Visibility = show && !string.IsNullOrEmpty(text)
                 ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        // ─── ПАТЧ sp1: панель «Больше…» (опциональные EXIF-сведения) ─────────────
+
+        private DispatcherTimer? _moreHideTimer;
+
+        private void UpdateMoreInfo(PhotoInfo photo)
+        {
+            string? txt = photo.BuildMoreInfo(_cfg);
+            TbMoreInfo.Text = txt ?? "";
+            if (txt == null) MoreInfoPanel.Visibility = Visibility.Collapsed;
+            // если включено пользователем ("показывать постоянно" = вкладка Больше… с полями),
+            // панель остаётся видимой; иначе скрывается через 6 c после вызова
+            else if (_moreHideTimer != null) MoreInfoPanel.Visibility = Visibility.Visible;
+            else MoreInfoPanel.Visibility = Visibility.Collapsed;
+        }
+
+        /// <summary>Открыть панель «Больше…» для текущего фото (жест/клавиша I).</summary>
+        public void ShowMoreInfoPanel()
+        {
+            var photo = _playlist.Current;
+            if (photo == null) return;
+            string? txt = photo.BuildMoreInfo(_cfg);
+            TbMoreInfo.Text = txt ?? "Включите нужные поля в Настройки → Больше…";
+            MoreInfoPanel.Visibility = Visibility.Visible;
+
+            _moreHideTimer?.Stop();
+            _moreHideTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(6) };
+            _moreHideTimer.Tick += (_, __) =>
+            { _moreHideTimer!.Stop(); MoreInfoPanel.Visibility = Visibility.Collapsed; };
+            _moreHideTimer.Start();
         }
 
         private void ShowEmpty()
@@ -588,6 +622,9 @@ namespace PhotoFrame
                     if (_fullscreen) ExitFullscreen(); else Close();                   break;
                 case Key.OemComma when e.KeyboardDevice.Modifiers == ModifierKeys.Control:
                     OpenSettings(); break;
+                // ПАТЧ sp1: «I» — показать панель «Больше…» (опциональные EXIF-сведения)
+                case Key.I:
+                    ShowMoreInfoPanel(); break;
             }
         }
 

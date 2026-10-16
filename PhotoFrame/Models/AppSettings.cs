@@ -51,6 +51,15 @@ namespace PhotoFrame.Models
         public bool   ShowDateOverlay      { get; set; } = true;
         public bool   ShowLocationOverlay  { get; set; } = true;
         public double OverlayFontSize      { get; set; } = 15.0;
+        /// <summary>ПАТЧ sp1: показывать точные GPS-координаты в оверлее местоположения (иначе — только регион).</summary>
+        public bool   ShowExactCoordinates { get; set; } = true;
+        // ─── ПАТЧ sp1: опциональные EXIF-сведения (вкладка «Больше…») ─────────────
+        public bool MoreInfoCamera   { get; set; } = false;
+        public bool MoreInfoExposure { get; set; } = false;
+        public bool MoreInfoFocal    { get; set; } = false;
+        public bool MoreInfoFileSize { get; set; } = false;
+        public bool MoreInfoAuthor   { get; set; } = false;
+        public bool MoreInfoTitle    { get; set; } = false;
 
         // ─── Переходы ─────────────────────────────────────────────────────────────
         public TransitionType TransitionType            { get; set; } = TransitionType.Random;
